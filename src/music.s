@@ -53,6 +53,19 @@ _music_start:
         sta     mus_on
         rts
 
+; void __fastcall__ music_note(unsigned char audf)
+;
+; Выдаёт одиночную ноту на канал мелодии, пока проигрыватель остановлен.
+; Нужна для траурного марша: голос эффектов работает связанной 16-битной
+; парой от тактовой 1.79 МГц, а таблица периодов мелодии рассчитана на
+; одиночный канал от базы 64 кГц - через sfx_play марш звучал октавой выше.
+        .export _music_note
+_music_note:
+        sta     AUDF3
+        lda     #MUS_VOL
+        sta     AUDC3
+        rts
+
 _music_stop:
         lda     #0
         sta     mus_on

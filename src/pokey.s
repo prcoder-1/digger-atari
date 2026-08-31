@@ -19,6 +19,7 @@
         .export _sfx_f, _sfx_c, _sfx_apply
         .export _sfx_writes
         .export _sfx_env_tick, _sfx_env_vol, _sfx_env_timbre
+        .export _sfx_sweep
 
 AUDF1   = $D200
 AUDC1   = $D201
@@ -46,6 +47,13 @@ _sfx_c:  .res 1                 ; тембр и громкость (AUDC2)
 _sfx_env_vol:    .byte 0        ; текущая громкость 0..15, дробная часть ниже
 _sfx_env_frac:   .byte 0
 _sfx_env_timbre: .byte 0
+
+; Скольжение высоты: столько прибавляется к делителю каждый кадр.
+; Ноль - высота держится. Нужно для скрежета при гибели: если менять высоту
+; раз в игровой такт, получаются девять отдельных нот с атакой на каждой, и
+; звучит это как мелодия, а не как скрежет. В БК-порте свип идёт шагами по
+; паре миллисекунд, то есть непрерывно.
+_sfx_sweep:      .byte 0
 
 ; Накопительный счётчик записей в POKEY. Проверять звук снимком экрана
 ; нельзя, а счётчик показывает, доходит ли дело до чипа вообще.
@@ -114,6 +122,19 @@ _pokey_all_off:
 _sfx_env_tick:
         lda     _sfx_env_vol
         beq     env_done                ; уже тихо
+
+        ; скольжение высоты, если включено
+        lda     _sfx_sweep
+        beq     env_novol
+        clc
+        adc     _sfx_f
+        sta     _sfx_f
+        sta     AUDF1
+        lda     _sfx_f+1
+        adc     #0
+        sta     _sfx_f+1
+        sta     AUDF2
+env_novol:
         sec
         lda     _sfx_env_frac
         sbc     #$60                    ; скорость спада

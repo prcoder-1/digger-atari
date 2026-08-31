@@ -9,9 +9,15 @@
 #include "hud.h"
 #include "sfx.h"
 
-extern const uint8_t spr_f1_p0[], spr_f1_p1[];
-extern const uint8_t spr_f2_p0[], spr_f2_p1[];
-extern const uint8_t spr_f3_p0[], spr_f3_p1[];
+/*
+ * Спрайты летящего снаряда: в исходниках оригинала они подписаны
+ * "traveling missile" и называются 15, k1 и k2. Группа f1..f5 - это
+ * надгробные камни от большего к меньшему, а f9 - перевёрнутый грузовик;
+ * они понадобятся для сцены гибели, но не здесь.
+ */
+extern const uint8_t spr_15_p0[], spr_15_p1[];
+extern const uint8_t spr_k1_p0[], spr_k1_p1[];
+extern const uint8_t spr_k2_p0[], spr_k2_p1[];
 extern const uint8_t spr_e1_p0[], spr_e1_p1[];
 extern const uint8_t spr_e2_p0[], spr_e2_p1[];
 extern const uint8_t spr_e3_p0[], spr_e3_p1[];
@@ -44,9 +50,9 @@ static struct {
 } mis;
 
 static const uint8_t *const fly_spr[3][2] = {
-    { spr_f1_p0, spr_f1_p1 },
-    { spr_f2_p0, spr_f2_p1 },
-    { spr_f3_p0, spr_f3_p1 },
+    { spr_15_p0, spr_15_p1 },
+    { spr_k1_p0, spr_k1_p1 },
+    { spr_k2_p0, spr_k2_p1 },
 };
 static const uint8_t *const boom_spr[3][2] = {
     { spr_e1_p0, spr_e1_p1 },
