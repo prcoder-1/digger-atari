@@ -6,10 +6,22 @@
 #include "blit.h"
 #include "game.h"
 
+/*
+ * Ноббин и Хоббин - разные существа и внешне. В исходниках оригинала
+ * спрайты подписаны так: m - "существо обычного типа" (это Ноббин),
+ * c - "существо, преследующее вас, вправо", a - то же влево (это Хоббин,
+ * который грызёт землю). Игрок должен видеть разницу: Хоббина нельзя
+ * переждать за стенкой, он придёт сквозь землю.
+ */
 extern const uint8_t spr_m0_p0[], spr_m0_p1[];
 extern const uint8_t spr_m1_p0[], spr_m1_p1[];
 extern const uint8_t spr_m2_p0[], spr_m2_p1[];
-extern const uint8_t spr_m3_p0[], spr_m3_p1[];
+extern const uint8_t spr_c0_p0[], spr_c0_p1[];
+extern const uint8_t spr_c1_p0[], spr_c1_p1[];
+extern const uint8_t spr_c2_p0[], spr_c2_p1[];
+extern const uint8_t spr_a0_p0[], spr_a0_p1[];
+extern const uint8_t spr_a1_p0[], spr_a1_p1[];
+extern const uint8_t spr_a2_p0[], spr_a2_p1[];
 
 bug_t bugs[MAX_BUGS];
 uint8_t bugs_active;
@@ -19,27 +31,39 @@ static uint8_t nest_x, nest_y;          /* клетка гнезда */
 static uint8_t spawn_delay;             /* тактов между появлениями */
 static uint8_t spawn_count;
 static uint8_t bugs_total;              /* сколько ещё родится за уровень */
+static uint8_t bugs_diff;               /* сложность уровня */
 
-static const uint8_t *const bug_spr[4][2] = {
-    { spr_m0_p0, spr_m0_p1 },
-    { spr_m1_p0, spr_m1_p1 },
-    { spr_m2_p0, spr_m2_p1 },
-    { spr_m3_p0, spr_m3_p1 },
+/* [облик: 0 Ноббин, 1 Хоббин вправо, 2 Хоббин влево][фаза][сдвиг] */
+static const uint8_t *const bug_spr[3][3][2] = {
+    { { spr_m0_p0, spr_m0_p1 }, { spr_m1_p0, spr_m1_p1 },
+      { spr_m2_p0, spr_m2_p1 } },
+    { { spr_c0_p0, spr_c0_p1 }, { spr_c1_p0, spr_c1_p1 },
+      { spr_c2_p0, spr_c2_p1 } },
+    { { spr_a0_p0, spr_a0_p1 }, { spr_a1_p0, spr_a1_p1 },
+      { spr_a2_p0, spr_a2_p1 } },
 };
 
 static void bug_draw(const bug_t *b)
 {
     uint8_t px = (uint8_t)(b->x * SUBSTEP_X_PX);
+    uint8_t look;
+
+    /* У Хоббина своя графика на каждую сторону; при движении по вертикали
+     * сохраняется та, что была по горизонтали в последний раз. */
+    if (b->kind != BUG_HOBBIN)
+        look = 0;
+    else
+        look = (uint8_t)((b->dir == DIR_LEFT) ? 2u : 1u);
 
     bl_x = (uint8_t)(px >> 2);
     bl_y = b->y;
     bl_h = SPRITE_H;
     if (px & 2u) {
         bl_w = 3;
-        bl_src = bug_spr[b->frame & 3u][1];
+        bl_src = bug_spr[look][b->frame % 3u][1];
     } else {
         bl_w = 2;
-        bl_src = bug_spr[b->frame & 3u][0];
+        bl_src = bug_spr[look][b->frame % 3u][0];
     }
     blit_mask();
 }
@@ -76,6 +100,7 @@ void bugs_init(uint8_t screen, uint8_t difficulty)
     spawn_delay = (uint8_t)(45u - 2u * difficulty);
     spawn_count = spawn_delay;
     bugs_total = (uint8_t)(difficulty + 5u);
+    bugs_diff = difficulty;
 }
 
 /*
@@ -155,6 +180,7 @@ static void bug_spawn(void)
         bugs[i].y = (uint8_t)(FIELD_Y_OFFSET + nest_y * CELL_H_PX);
         bugs[i].dir = DIR_LEFT;
         bugs[i].frame = 0;
+        bugs[i].count = 0;
         ++bugs_active;
         --bugs_total;
         return;
@@ -218,6 +244,17 @@ void bugs_tick(void)
                 continue;               /* заперт - стоит на месте */
         }
 
+        /* Смена облика по таймеру: Ноббин ходит по готовым ходам, Хоббин
+         * грызёт землю. Перенос из порта на БК. */
+        {
+            uint8_t limit = (b->kind == BUG_HOBBIN)
+                          ? HOBBIN_TICKS(bugs_diff) : NOBBIN_TICKS(bugs_diff);
+            if (++b->count > limit) {
+                b->count = 0;
+                b->kind = (uint8_t)(b->kind ^ 1u);
+            }
+        }
+
         bug_erase(b);
         switch (b->dir) {
         case DIR_RIGHT: ++b->x; break;
@@ -226,6 +263,24 @@ void bugs_tick(void)
         case DIR_UP:    b->y = (uint8_t)(b->y - SUBSTEP_Y_LINES); break;
         default: break;
         }
+        /* Хоббин прогрызает ход: гасит землю под собой и помечает клетку
+         * прокопанной, иначе картинка и модель поля разошлись бы, и Ноббины
+         * не смогли бы потом пройти его тоннелем. */
+        if (b->kind == BUG_HOBBIN) {
+            uint8_t xl = x_log_tbl[b->x], yl = y_log_tbl[b->y];
+            cp_x = (uint8_t)(b->x * SUBSTEP_X_PX);
+            cp_y = b->y;
+            cp_w = SPRITE_W_PX;
+            cp_h = SPRITE_H;
+            clear_px();
+            if (b->dir == DIR_RIGHT || b->dir == DIR_LEFT)
+                background[yl][xl] &= (uint16_t)~BG_HORIZ_ALL;
+            else
+                background[yl][xl] &= (uint16_t)~BG_VERT_ALL;
+            if ((background[yl][xl] & (BG_HORIZ_ALL | BG_VERT_ALL)) == 0u)
+                background[yl][xl] &= (uint16_t)~BG_INTACT;
+        }
+
         ++b->frame;
         bug_draw(b);
     }

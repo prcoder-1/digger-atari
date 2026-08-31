@@ -96,37 +96,76 @@ static uint8_t supported(const bag_t *b)
     return (uint8_t)((background[yl][xl] & BG_ANY_BITE) == BG_ANY_BITE);
 }
 
-uint8_t bags_push(uint8_t x_log, uint8_t y_log, uint8_t dir)
+/* Ищет стоящий или качающийся мешок в клетке; 0xFF - мешка нет */
+static uint8_t bag_at(uint8_t x_log, uint8_t y_log)
 {
     uint8_t i;
-
     for (i = 0; i < MAX_BAGS; ++i) {
-        bag_t *b = &bags[i];
+        const bag_t *b = &bags[i];
         if (b->state != BAG_STANDING && b->state != BAG_LOOSE)
             continue;
-        if (x_log_tbl[b->x] != x_log || y_log_tbl[b->y] != y_log)
-            continue;
+        if (x_log_tbl[b->x] == x_log && y_log_tbl[b->y] == y_log)
+            return i;
+    }
+    return 0xFFu;
+}
 
-        /* Толкать можно только вбок и только в пределах поля */
+/*
+ * Толкание вбок с учётом ЦЕПОЧКИ мешков: если за мешком стоит другой,
+ * двигаются оба, и так далее, пока цепочка не упрётся в край поля.
+ * Раньше двигался только первый, а стоящий за ним просто блокировал ход -
+ * в оригинале Диггер расталкивает подряд стоящие мешки.
+ *
+ * Цепочка проходится списком, а не рекурсией: в оригинале это рекурсивная
+ * процедура, но здесь глубина ограничена семью мешками, а итерация
+ * не зависит от того, как собран модуль (рекурсию в cc65 ломает
+ * ключ -Cl, и об этом легко забыть).
+ */
+uint8_t bags_push(uint8_t x_log, uint8_t y_log, uint8_t dir)
+{
+    uint8_t chain[MAX_BAGS];
+    uint8_t n = 0;
+    uint8_t cx = x_log;
+    uint8_t i, k;
+
+    if (dir != DIR_RIGHT && dir != DIR_LEFT)
+        return 0;                       /* сверху и снизу мешок не сдвинуть */
+
+    /* Собрать подряд стоящие мешки в направлении толчка */
+    for (;;) {
+        i = bag_at(cx, y_log);
+        if (i == 0xFFu)
+            break;
+        if (n >= MAX_BAGS)
+            return 0;
+        chain[n++] = i;
         if (dir == DIR_RIGHT) {
-            if (b->x + 1u > (FIELD_X_OFFSET + (W_MAX - 1u) * POS_X_STEP))
-                return 0;
-            bag_erase(b);
-            ++b->x;
-        } else if (dir == DIR_LEFT) {
-            if (b->x <= FIELD_X_OFFSET)
-                return 0;
-            bag_erase(b);
-            --b->x;
+            if (cx + 1u >= W_MAX)
+                return 0;               /* цепочка упёрлась в край */
+            ++cx;
         } else {
-            return 0;                   /* сверху и снизу мешок не сдвинуть */
+            if (cx == 0u)
+                return 0;
+            --cx;
         }
+    }
+
+    if (n == 0)
+        return 1;                       /* мешков на пути нет */
+
+    /* Двигать с дальнего конца, иначе мешки наехали бы друг на друга */
+    for (k = n; k > 0; --k) {
+        bag_t *b = &bags[chain[k - 1u]];
+        bag_erase(b);
+        if (dir == DIR_RIGHT)
+            ++b->x;
+        else
+            --b->x;
         b->count = 0;
         b->state = BAG_STANDING;
         bag_draw(b);
-        return 1;
     }
-    return 1;                           /* мешка в этой клетке нет */
+    return 1;
 }
 
 void bags_tick(void)
