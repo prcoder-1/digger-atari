@@ -1,0 +1,12 @@
+# Каталоги сборки: всё в них порождается из исходников
+build/
+build-demo/
+build-prof/
+build-xl/
+build-noopt/
+
+# Эталон автопроверки привязан к конкретному прогону и переснимается
+# командой tools/check.sh --bless, поэтому в репозитории не нужен
+tools/expect.txt
+
+tools/__pycache__/

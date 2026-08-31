@@ -1,0 +1,75 @@
+#!/usr/bin/env python3
+"""
+telemetry.py - читает строку телеметрии демо-сборки со снимка экрана.
+
+Демо-сборка (-DDIGGER_DEMO) рисует ключевые числа отдельной строкой пикселей:
+восемь пикселей на байт, установленный бит светится. Читать биты со снимка
+надёжнее, чем распознавать цифры знакогенератора: значение восстанавливается
+точно, а не с точностью до похожести растра.
+
+    tools/telemetry.py <кадр.png>
+"""
+
+import sys
+
+# Строка растра телеметрии (DEMO_TELEMETRY_Y в src/demo.h) плюс 24 пустые
+# строки, с которых начинается картинка на снимке эмулятора.
+TELEMETRY_ROW = 26 + 24
+NBYTES = 20
+PX_PER_BYTE_IN_WINDOW = 2 * 8       # пиксель поля = 2 пикселя окна
+LEFT_MARGIN = 8                     # поле начинается с колонки 8 окна
+
+
+def read(path):
+    from PIL import Image
+    im = Image.open(path).convert('RGB')
+    px = im.load()
+
+    out = []
+    for i in range(NBYTES):
+        v = 0
+        for bit in range(8):
+            # каждый пиксель поля занимает 2 колонки окна; берём центр
+            x = LEFT_MARGIN + (i * 8 + bit) * 2
+            lit = px[x, TELEMETRY_ROW] != (0, 0, 0)
+            v = (v << 1) | (1 if lit else 0)
+        out.append(v)
+    return out
+
+
+def main():
+    if len(sys.argv) < 2:
+        print(__doc__)
+        return 1
+    b = read(sys.argv[1])
+
+    tick = (b[0] << 8) | b[1]
+    score = '%02X%02X%02X' % (b[2], b[3], b[4])
+    print('такт:           %d' % tick)
+    print('счёт:           %s' % score)
+    print('man.x:          %d  (подшаги)' % b[5])
+    print('man.y:          %d  (строки растра)' % b[6])
+    print('камней осталось: %d' % b[7])
+    print('мешков стоит:   %d' % b[8])
+    print('золота:         %d' % b[9])
+    print('врагов:         %d' % (b[10] >> 4))
+    print('жизней:         %d' % (b[10] & 0x0F))
+    print('выстрелов:      %d' % b[14])
+    print('погасло об землю: %d, ушло за край: %d' % (b[15] >> 4, b[15] & 0x0F))
+    print('уровней пройдено: %d, текущий уровень: %d' % (b[16] >> 4, b[16] & 0x0F))
+    print('эффектов запущено: %d, записей в POKEY: %d' % (b[17], b[18]))
+    print('бонус-режим: %d (0 выкл, 1 вишенка, 2 идёт), съедено врагов: %d' % (b[19] >> 4, b[19] & 0x0F))
+    if b[11] != 0xFF:
+        cell_x = (b[11] - 2) // 5 if b[11] >= 2 else -1
+        rem_x = (b[11] - 2) % 5 if b[11] >= 2 else -1
+        cell_y = (b[12] - 28) // 18 if b[12] >= 28 else -1
+        rem_y = ((b[12] - 28) % 18) // 3 if b[12] >= 28 else -1
+        print('враг 1: x=%d (клетка %d, ост %d)  y=%d (клетка %d, ост %d)  dir=%d'
+              % (b[11], cell_x, rem_x, b[12], cell_y, rem_y, b[13]))
+    print()
+    print('сырые байты: ' + ' '.join('%02X' % v for v in b))
+    return 0
+
+
+if __name__ == '__main__':
+    sys.exit(main())
