@@ -209,6 +209,20 @@ static void dig_background(dir_t dir)
     }
 }
 
+/*
+ * Перебор фазы анимации 0-1-2-1-0-... Вызывается КАЖДЫЙ такт, а не только
+ * при движении: в оригинале Диггер перебирает лапами и стоя на месте, и
+ * привязка анимации к нажатию выглядела бы как замирание персонажа.
+ */
+static void next_frame(void)
+{
+    if (man.frame == 0)
+        man.frame_inc = 1;
+    else if (man.frame >= 2)
+        man.frame_inc = -1;
+    man.frame = (uint8_t)(man.frame + man.frame_inc);
+}
+
 /* Можно ли сдвинуться в направлении dir, не выйдя за поле */
 static uint8_t can_move(dir_t dir)
 {
@@ -242,6 +256,7 @@ void man_tick(dir_t want)
         /* Стоя на месте Диггер всё равно перебирает фазы, поэтому старое
          * изображение надо погасить и здесь. */
         man_erase((uint8_t)(man.x * SUBSTEP_X_PX), man.y);
+        next_frame();
         take_coin();
         man_draw();
         return;
@@ -297,13 +312,7 @@ void man_tick(dir_t want)
     }
 
     man_erase(old_px, old_y);
-
-    /* Фаза анимации перебирается 0-1-2-1-0-... */
-    if (man.frame == 0)
-        man.frame_inc = 1;
-    else if (man.frame >= 2)
-        man.frame_inc = -1;
-    man.frame = (uint8_t)(man.frame + man.frame_inc);
+    next_frame();
 
     take_coin();
     man_draw();

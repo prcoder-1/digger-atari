@@ -25,12 +25,12 @@ void hud_init(void)
 {
     text_init(2);                       /* цвет надписей - COLPF1 */
     lives_shown = 0xFF;
-    text_string(SCORE_X, SCORE_Y - 2u, "SCORE");
+    /* Подписи SCORE нет: в оригинале счёт стоит сам по себе */
 }
 
 void hud_score(void)
 {
-    text_bcd6(SCORE_X, (uint8_t)(SCORE_Y + 8u), score);
+    text_bcd6(SCORE_X, SCORE_Y, score);
 }
 
 void hud_lives(uint8_t n)

@@ -12,6 +12,7 @@
  */
 #include "text.h"
 #include "screen.h"
+#include "blit.h"
 
 #define CHARSET_ROM  ((const uint8_t *)0xE000u)
 
@@ -47,9 +48,26 @@ void text_char(uint8_t x_byte, uint8_t y, uint8_t internal_code)
     }
 }
 
+/*
+ * Цифры счёта берутся из шрифта ОРИГИНАЛА, а не из знакогенератора ПЗУ:
+ * 12x12 пикселей, три байта на строку, сплошные данные без маски.
+ * Знакогенератор ПЗУ остаётся для букв - в счёте их нет, а для надписей
+ * заставки нужен отдельный набор.
+ */
+extern const uint8_t font_digits[];
+
+#define FONT_W      3u          /* байт на строку  */
+#define FONT_H      12u         /* строк на цифру  */
+#define FONT_BYTES  (FONT_W * FONT_H)
+
 void text_digit(uint8_t x_byte, uint8_t y, uint8_t d)
 {
-    text_char(x_byte, y, (uint8_t)(INT_DIGIT0 + (d & 0x0Fu)));
+    bl_x = x_byte;
+    bl_y = y;
+    bl_w = FONT_W;
+    bl_h = FONT_H;
+    bl_src = font_digits + (unsigned)(d & 0x0Fu) * FONT_BYTES;
+    blit_plain();
 }
 
 void text_string(uint8_t x_byte, uint8_t y, const char *s)
@@ -77,9 +95,10 @@ void text_string(uint8_t x_byte, uint8_t y, const char *s)
 void text_bcd6(uint8_t x_byte, uint8_t y, const uint8_t *bcd)
 {
     uint8_t i;
+    /* Цифра шрифта оригинала шире символа ПЗУ: три байта вместо двух */
     for (i = 0; i < 3u; ++i) {
         text_digit(x_byte, y, (uint8_t)(bcd[i] >> 4));
-        text_digit((uint8_t)(x_byte + 2u), y, (uint8_t)(bcd[i] & 0x0Fu));
-        x_byte += 4u;
+        text_digit((uint8_t)(x_byte + FONT_W), y, (uint8_t)(bcd[i] & 0x0Fu));
+        x_byte += (uint8_t)(2u * FONT_W);
     }
 }

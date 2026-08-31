@@ -25,7 +25,7 @@
 ; строка экрана может пересекать границу страницы, и ",x" переносит сама.
 
         .export _bl_x, _bl_y, _bl_w, _bl_h, _bl_src
-        .export _blit_mask, _blit_copy, _blit_clear
+        .export _blit_mask, _blit_copy, _blit_clear, _blit_plain
         .export _cp_x, _cp_y, _cp_w, _cp_h, _clear_px
 
         .import _screen_rowlo, _screen_rowhi
@@ -221,6 +221,31 @@ cp_lmask:
 ; Гасимые пиксели последнего байта при смещении конца 0..3
 cp_rmask:
         .byte   $C0, $F0, $FC, $FF
+
+; ---------------------------------------------------------------------------
+; blit_plain - непрозрачный вывод СПЛОШНЫХ данных, без маски и без пропусков.
+;
+; Отличается от blit_copy тем, что в источнике лежат только байты
+; изображения. Спрайты хранятся парами (маска, изображение), а шрифт счёта -
+; сплошным массивом, и шагать по нему через байт было бы неверно.
+; ---------------------------------------------------------------------------
+_blit_plain:
+        BLIT_SETUP
+        ldy     #0
+bp_row:
+        SET_ROW_ADDR bp_sta, bp_sta
+        ldx     #0
+bp_col:
+        lda     (_bl_src),y
+        iny
+bp_sta: sta     $FFFF,x
+        inx
+        cpx     _bl_w
+        bne     bp_col
+        inc     bl_row
+        dec     bl_cnt
+        bne     bp_row
+        rts
 
 ; ---------------------------------------------------------------------------
 ; blit_clear - гасит прямоугольник _bl_w x _bl_h байт в чёрный.

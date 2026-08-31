@@ -1,7 +1,10 @@
 # Digger для ATARI 65XE / 130XE (cc65 + ca65)
 
-TARGET    := atari
-CFG       := cfg/digger.cfg
+# Основная цель - atarixl: ПЗУ ОС выключается, спрайты уезжают в ОЗУ под ним.
+# Цель atari (27648 байт под код и данные) игру больше не вмещает - переход
+# был предусмотрен планом и произошёл на подключении шрифта счёта.
+TARGET    := atarixl
+CFG       := cfg/digger-xl.cfg
 BUILD     := build
 XEX       := $(BUILD)/digger.xex
 MAP       := $(BUILD)/digger.map
@@ -33,7 +36,7 @@ EMU       := atari800
 # поднял бы RAM_SIZE=576 и скрыл бы выход за пределы памяти.
 EMUFLAGS  := -pal -nobasic
 
-.PHONY: all clean run run130 size atr noopt demo play xl sound
+.PHONY: all clean run run130 size atr noopt demo play atari sound
 
 all: $(XEX)
 
@@ -54,9 +57,10 @@ demo:
 # Сборка на цель atarixl: ПЗУ ОС выключается, спрайты уезжают в ОЗУ под ним,
 # и MAIN остаётся целиком под код. Нужна, когда геймплей перестаёт помещаться
 # в 27 КБ цели atari.
-xl:
-	$(MAKE) BUILD=build-xl TARGET=atarixl CFG=cfg/digger-xl.cfg all
-	@echo "сборка atarixl: build-xl/digger.xex"
+# Сборка на цель atari - для проверки совместимости; игра туда уже не влезает
+atari:
+	$(MAKE) BUILD=build-atari TARGET=atari CFG=cfg/digger.cfg all
+	@echo "сборка atari: build-atari/digger.xex"
 
 # Замер звука: пересобирает демо-сборку и разбирает дамп регистров POKEY.
 # Пересборка внутри скрипта не для удобства - однажды дамп был снят с файла,
