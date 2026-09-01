@@ -37,12 +37,10 @@ static const uint8_t *const bag_spr[6][2] = {
 
 static void bag_draw(const bag_t *b)
 {
-    uint8_t px = (uint8_t)(b->x * SUBSTEP_X_PX);
-
-    bl_x = (uint8_t)(px >> 2);
+    bl_x = (uint8_t)(b->x >> 1);
     bl_y = b->y;
     bl_h = SPRITE_H;
-    if (px & 2u) {
+    if (b->x & 1u) {
         bl_w = 3;
         bl_src = bag_spr[b->state][1];
     } else {
@@ -55,9 +53,9 @@ static void bag_draw(const bag_t *b)
 /* Гасит место, где мешок был, чтобы за ним не тянулся след */
 static void bag_erase(const bag_t *b)
 {
-    cp_x = (uint8_t)(b->x * SUBSTEP_X_PX);
+    cp_x = b->x;
     cp_y = b->y;
-    cp_w = SPRITE_W_PX;
+    cp_w = SPRITE_W_SUB;
     cp_h = SPRITE_H;
     clear_px();
 }

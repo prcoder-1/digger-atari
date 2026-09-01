@@ -60,6 +60,9 @@ void field_redraw(uint8_t screen);
 
 /* Гасит прямоугольник в пикселях (для прокопки). Обёртка над clear_px
  * из blit.s - на Си эта процедура неверно собиралась с оптимизацией. */
+/* Закругляет торец хода в направлении dir; см. field.c */
+void field_gnaw(uint8_t dir, uint8_t x_sub, uint8_t y);
+
 void clear_px_at(uint8_t x_px, uint8_t y, uint8_t w_px, uint8_t h);
 
 /* Забирает камень из клетки, если он там есть. Возвращает 1, если забрал. */

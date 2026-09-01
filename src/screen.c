@@ -1,5 +1,7 @@
 /*
- * screen.c - инициализация дисплей-листа ANTIC E и таблиц адресов строк.
+ * screen.c - инициализация дисплей-листа и таблиц адресов строк.
+ *
+ * Режим - ANTIC F: 40 байт на строку по одному биту на точку, 320 точек.
  */
 #include <string.h>
 #include "screen.h"
@@ -66,17 +68,17 @@ static void build_row_tables(void)
 /* Дописывает LMS-инструкцию с адресом; возвращает новую позицию */
 static uint8_t *emit_lms(uint8_t *d, uint16_t addr)
 {
-    *d++ = DL_MODE_E | DL_LMS;
+    *d++ = DL_MODE_F | DL_LMS;
     *d++ = (uint8_t)addr;
     *d++ = (uint8_t)(addr >> 8);
     return d;
 }
 
-/* Дописывает n обычных строк режима E */
+/* Дописывает n обычных строк режима F */
 static uint8_t *emit_lines(uint8_t *d, uint8_t n)
 {
     while (n--)
-        *d++ = DL_MODE_E;
+        *d++ = DL_MODE_F;
     return d;
 }
 

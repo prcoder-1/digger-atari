@@ -25,6 +25,7 @@ HDRS      := $(wildcard src/*.h)
 
 CSRC      := $(wildcard src/*.c)
 ASRC      := $(wildcard src/*.s)
+
 GSRC      := $(wildcard assets/*.s)
 OBJS      := $(patsubst src/%.c,$(BUILD)/%.o,$(CSRC)) \
              $(patsubst src/%.s,$(BUILD)/%.o,$(ASRC)) \
@@ -36,7 +37,7 @@ EMU       := atari800
 # поднял бы RAM_SIZE=576 и скрыл бы выход за пределы памяти.
 EMUFLAGS  := -pal -nobasic
 
-.PHONY: all clean run run130 size atr noopt demo play atari sound
+.PHONY: all clean run run130 size atr noopt demo play atari sound pmg
 
 all: $(XEX)
 
@@ -73,6 +74,13 @@ atr: $(XEX)
 
 sound:
 	tools/sound.sh
+
+# Сборка с Диггером в аппаратных спрайтах: он получает свои цвета поверх
+# монохромного поля. Нужна, чтобы выбор решался снимком, а не рассуждением -
+# в PMG фигура вдвое грубее поля, см. doc/graphics.md.
+pmg:
+	$(MAKE) BUILD=build-pmg CFLAGS="$(CFLAGS) -DDIGGER_PMG" all
+	@echo "сборка с PMG: build-pmg/digger.xex"
 
 noopt:
 	$(MAKE) BUILD=build-noopt CFLAGS="-t $(TARGET) --cpu 6502 --standard c99 -I src" all

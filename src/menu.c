@@ -64,17 +64,14 @@ void menu_show(void)
     uint8_t i;
 
     screen_clear(0);
-    text_init(3);
     text_string(13, 24, "DIGGER");
 
-    text_init(2);
     text_string(11, 56, "HIGH SCORES");
     for (i = 0; i < HS_COUNT; ++i) {
         text_digit(9, (uint8_t)(72 + i * 12u), (uint8_t)(i + 1u));
         text_bcd6(12, (uint8_t)(72 + i * 12u), hiscore[i]);
     }
 
-    text_init(1);
     text_string(9, 148, "PRESS FIRE");
     text_string(6, 168, "JOYSTICK TO DIG");
 

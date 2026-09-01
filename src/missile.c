@@ -24,7 +24,14 @@ extern const uint8_t spr_e3_p0[], spr_e3_p1[];
 
 void __fastcall__ score_add(unsigned int bcd);
 
-#define MIS_H         7u        /* снаряд ниже существ: 8x7 пикселей */
+/*
+ * Снаряд заметно мельче существ: 8 точек на 7 строк, то есть ОДИН байт в
+ * строке, а не два. Раньше здесь выводилось два и три байта, как у спрайтов
+ * 16 точек, и блиттер читал за концом данных - на экране вместо искрящегося
+ * шара появлялось то, что лежит в памяти следом.
+ */
+#define MIS_H         7u        /* строк растра            */
+#define MIS_W_BYTES   1u        /* байт в строке, фаза 0   */
 #define MIS_STEP_X    2u        /* подшага за такт - вдвое быстрее ходьбы */
 #define MIS_STEP_Y    (2u * SUBSTEP_Y_LINES)
 #define EXPLODE_TICKS 3u
@@ -84,16 +91,14 @@ uint8_t missile_state(void)
 
 static void mis_draw(const uint8_t *const spr[3][2], uint8_t phase)
 {
-    uint8_t px = (uint8_t)(mis.x * SUBSTEP_X_PX);
-
-    bl_x = (uint8_t)(px >> 2);
+    bl_x = (uint8_t)(mis.x >> 1);
     bl_y = mis.y;
     bl_h = MIS_H;
-    if (px & 2u) {
-        bl_w = 3;
+    if (mis.x & 1u) {
+        bl_w = MIS_W_BYTES + 1u;        /* сдвинутая фаза на байт шире */
         bl_src = spr[phase][1];
     } else {
-        bl_w = 2;
+        bl_w = MIS_W_BYTES;
         bl_src = spr[phase][0];
     }
     blit_mask();
@@ -101,9 +106,13 @@ static void mis_draw(const uint8_t *const spr[3][2], uint8_t phase)
 
 static void mis_erase(void)
 {
-    cp_x = (uint8_t)(mis.x * SUBSTEP_X_PX);
+    /* Гасится ровно то, что было выведено: байт - это два подшага, и у
+     * сдвинутой фазы байтов на один больше. Прежняя ширина в целый спрайт
+     * (16 точек) выскабливала лишнюю землю по бокам от снаряда. */
+    cp_x = mis.x;
     cp_y = mis.y;
-    cp_w = SPRITE_W_PX;
+    cp_w = (uint8_t)(((mis.x & 1u) ? MIS_W_BYTES + 1u : MIS_W_BYTES)
+                     * SUBSTEP_PER_BYTE);
     cp_h = MIS_H;
     clear_px();
 }

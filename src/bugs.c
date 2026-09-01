@@ -45,7 +45,6 @@ static const uint8_t *const bug_spr[3][3][2] = {
 
 static void bug_draw(const bug_t *b)
 {
-    uint8_t px = (uint8_t)(b->x * SUBSTEP_X_PX);
     uint8_t look;
 
     /* У Хоббина своя графика на каждую сторону; при движении по вертикали
@@ -55,10 +54,10 @@ static void bug_draw(const bug_t *b)
     else
         look = (uint8_t)((b->dir == DIR_LEFT) ? 2u : 1u);
 
-    bl_x = (uint8_t)(px >> 2);
+    bl_x = (uint8_t)(b->x >> 1);
     bl_y = b->y;
     bl_h = SPRITE_H;
-    if (px & 2u) {
+    if (b->x & 1u) {
         bl_w = 3;
         bl_src = bug_spr[look][b->frame % 3u][1];
     } else {
@@ -68,11 +67,32 @@ static void bug_draw(const bug_t *b)
     blit_mask();
 }
 
+/*
+ * Касается ли враг i другого живого врага. Нужно для смены облика: Ноббин
+ * становится Хоббином не по таймеру, а когда упёрся - в том числе когда
+ * толкается с соседом. Габарит и приём сравнения те же, что в bugs_hit_man.
+ */
+static uint8_t bug_touches_other(uint8_t i)
+{
+    uint8_t t;
+    const bug_t *b = &bugs[i];
+
+    for (t = 0; t < MAX_BUGS; ++t) {
+        const bug_t *o = &bugs[t];
+        if (t == i || o->state != BUG_ALIVE)
+            continue;
+        if ((uint8_t)(o->x - b->x + 3u) < 7u &&
+            (uint16_t)(o->y - b->y + 14u) < 29u)
+            return 1;
+    }
+    return 0;
+}
+
 static void bug_erase(const bug_t *b)
 {
-    cp_x = (uint8_t)(b->x * SUBSTEP_X_PX);
+    cp_x = b->x;
     cp_y = b->y;
-    cp_w = SPRITE_W_PX;
+    cp_w = SPRITE_W_SUB;
     cp_h = SPRITE_H;
     clear_px();
 }
@@ -214,6 +234,7 @@ uint8_t bugs_left_to_spawn(void)
 void bugs_tick(void)
 {
     uint8_t i, k;
+    uint8_t old_x, old_y;       /* положение до шага - для прогрыза */
     uint8_t order[4];
 
     if (spawn_count == 0) {
@@ -242,25 +263,47 @@ void bugs_tick(void)
             }
             if (k == 4u) {
                 /* Заперт - но анимация идёт всё равно: существо должно
-                 * шевелиться и стоя на месте, иначе выглядит замершим. */
+                 * шевелиться и стоя на месте, иначе выглядит замершим.
+                 * Застревание засчитывается: именно из-за него Ноббин
+                 * превращается в Хоббина и прогрызает себе выход. */
+                if (b->count < 100u)
+                    ++b->count;
                 bug_erase(b);
                 ++b->frame;
                 bug_draw(b);
                 continue;
             }
-        }
 
-        /* Смена облика по таймеру: Ноббин ходит по готовым ходам, Хоббин
-         * грызёт землю. Перенос из порта на БК. */
-        {
-            uint8_t limit = (b->kind == BUG_HOBBIN)
-                          ? HOBBIN_TICKS(bugs_diff) : NOBBIN_TICKS(bugs_diff);
-            if (++b->count > limit) {
+            /* Хоббин возвращается в Ноббины, только стоя ровно в клетке */
+            if (b->kind == BUG_HOBBIN && b->count > HOBBIN_TICKS(bugs_diff)) {
                 b->count = 0;
-                b->kind = (uint8_t)(b->kind ^ 1u);
+                b->kind = BUG_NOBBIN;
             }
         }
 
+        /*
+         * Смена облика. count - это счётчик ЗАСТРЕВАНИЯ, а не свободный
+         * таймер: у Хоббина он растёт каждый такт (тот всегда в работе), у
+         * Ноббина - только когда идти некуда или он толкается с соседом.
+         *
+         * Прежняя версия наращивала счётчик обоим и просто переключала облик
+         * туда-сюда. Из-за этого Хоббины сами собой становились Ноббинами, а
+         * вся стая непрерывно перекидывалась между обликами.
+         */
+        if (b->kind == BUG_HOBBIN) {
+            if (b->count < 100u)
+                ++b->count;
+        } else {
+            if (bug_touches_other(i) && b->count < 100u)
+                ++b->count;
+            if (b->count > NOBBIN_TICKS(bugs_diff)) {
+                b->count = 0;
+                b->kind = BUG_HOBBIN;
+            }
+        }
+
+        old_x = b->x;
+        old_y = b->y;
         bug_erase(b);
         switch (b->dir) {
         case DIR_RIGHT: ++b->x; break;
@@ -274,9 +317,9 @@ void bugs_tick(void)
          * не смогли бы потом пройти его тоннелем. */
         if (b->kind == BUG_HOBBIN) {
             uint8_t xl = x_log_tbl[b->x], yl = y_log_tbl[b->y];
-            cp_x = (uint8_t)(b->x * SUBSTEP_X_PX);
+            cp_x = b->x;
             cp_y = b->y;
-            cp_w = SPRITE_W_PX;
+            cp_w = SPRITE_W_SUB;
             cp_h = SPRITE_H;
             clear_px();
             if (b->dir == DIR_RIGHT || b->dir == DIR_LEFT)
@@ -285,6 +328,8 @@ void bugs_tick(void)
                 background[yl][xl] &= (uint16_t)~BG_VERT_ALL;
             if ((background[yl][xl] & (BG_HORIZ_ALL | BG_VERT_ALL)) == 0u)
                 background[yl][xl] &= (uint16_t)~BG_INTACT;
+            /* Торец прогрызенного хода закругляется так же, как у Диггера */
+            field_gnaw(b->dir, old_x, old_y);
         }
 
         ++b->frame;

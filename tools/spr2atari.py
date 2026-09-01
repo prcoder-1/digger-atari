@@ -1,27 +1,31 @@
 #!/usr/bin/env python3
 """
-spr2atari.py - спрайты оригинала Digger для PC -> данные для ANTIC E.
+spr2atari.py - спрайты оригинала Digger для PC -> данные для ANTIC F.
 
 Что делает:
   1. Разбирает Sprites/*.SPR (см. sprlib.py).
-  2. Сжимает вдвое по горизонтали (320 -> 160), по вертикали один к одному.
-  3. Строит две предсдвинутые фазы (сдвиг 0 и 2 пикселя), потому что подшаг
-     по X равен 2 пикселям, то есть половине байта.
+  2. Переводит четыре краски CGA в одну: 320 точек оригинала ложатся в
+     320 точек ANTIC F один к одному, сжимать ничего не нужно.
+  3. Строит две предсдвинутые фазы (сдвиг 0 и 4 точки), потому что подшаг
+     по X равен 4 точкам, то есть половине байта.
   4. Раскладывает маску и изображение вперемежку по строке (msk0, img0,
      msk1, img1, ...), чтобы блиттер шёл по обоим одним индексным регистром.
      Порядок именно "маска, потом изображение": тогда внутренний цикл -
      это lda (src),y / and экран,x / ora (src),y / sta экран,x, то есть
      25 тактов на байт без временных ячеек.
-  5. Выдаёт .s для ca65 и контрольный лист PNG для сверки глазами.
+  5. По ключу --pmg дополнительно выдаёт кадры Диггера для аппаратных
+     спрайтов - там своя упаковка, см. emit_pmg().
+  6. Выдаёт .s для ca65 и контрольный лист PNG для сверки глазами.
 
 Модель вывода (как в оригинале и в порте на БК):
     экран = (экран И маска) ИЛИ изображение
-Маска содержит 3 (все биты) там, где виден фон, и 0 там, где спрайт или его
-ореол. Пиксели с изображением 0 и маской 0 - это ореол: он гасится в чёрный.
+Маска содержит единицы там, где виден фон, и нули там, где спрайт или его
+ореол. Точки с изображением 0 и маской 0 - это ореол: он гасится в чёрный.
+Ореол важен вдвойне при одной краске: фигура одного цвета с землёй, и
+отделяет её от фона именно чёрная кайма.
 
-Правило сжатия: два соседних пикселя оригинала дают один. Для изображения
-берётся первый ненулевой (силуэт важнее оттенка), для покрытия - объединение.
-Инвариант "изображение != 0 => маска == 0" при этом сохраняется.
+Правило перевода в одну краску разное для фигур и для земли, см. monochrome()
+и threshold_tile() - там же объяснено, почему одного правила не хватило.
 """
 
 import argparse
@@ -32,10 +36,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import sprlib
 
-SUBSTEP_PX = 2          # подшаг по X в пикселях = половина байта
+SUBSTEP_PX = 4          # подшаг по X в точках = половина байта
+PX_PER_BYTE = 8         # один бит на точку
 
-# Порог разделения на два сегмента: столько байт уходит в первый.
-# Под ПЗУ доступно $E400-$FFF9 (7162 байта) и $D800-$DFFF (2048).
 # Ёмкость двух кусков ОЗУ под ПЗУ. Разделение считается точно: в первый
 # сегмент набирается столько спрайтов, сколько влезает целиком, остальное
 # уходит во второй. Порог "на глаз" тут не работает - зазор всего десятки байт.
@@ -45,24 +48,53 @@ HIDDEN_RAM2_BYTES = 0x0800              # 2048
 # Значок жизни второго игрока и пустой значок: режим на двух игроков в порт
 # не входит. Экономия нужна буквально - данные не помещались под ПЗУ.
 SKIP = ('s1', 's2')
-PHASES = 2              # фазы сдвига: 0 и 2 пикселя
+PHASES = 2              # фазы сдвига: 0 и 4 точки
+
+# Кадры Диггера: четыре направления по три кадра анимации.
+MAN_FRAMES = ('r0', 'r1', 'r2', 'l0', 'l1', 'l2',
+              'd0', 'd1', 'd2', 'u0', 'u1', 'u2')
 
 
-def halve(image, outln):
-    """Сжимает спрайт вдвое по горизонтали, возвращает (image, outln)."""
-    out_img, out_msk = [], []
-    for y in range(len(image)):
-        ri, rm = [], []
-        src_i, src_m = image[y], outln[y]
-        for x in range(0, len(src_i), 2):
-            a, b = src_i[x], src_i[x + 1]
-            # покрытие = объединение (маска 0 = закрыто спрайтом или ореолом)
-            covered = (src_m[x] == 0) or (src_m[x + 1] == 0)
-            ri.append(a if a else b)
-            rm.append(0 if covered else 3)
-        out_img.append(ri)
-        out_msk.append(rm)
-    return out_img, out_msk
+def pack(rows):
+    """Матрица нулей и единиц -> байты ANTIC F, старший бит слева."""
+    out = bytearray()
+    for row in rows:
+        assert len(row) % PX_PER_BYTE == 0, 'ширина должна быть кратна 8'
+        for bx in range(0, len(row), PX_PER_BYTE):
+            b = 0
+            for p in range(PX_PER_BYTE):
+                if row[bx + p]:
+                    b |= 1 << (PX_PER_BYTE - 1 - p)
+            out.append(b)
+    return bytes(out)
+
+
+def threshold_tile(rows):
+    """Текстура земли 20x4 в четыре краски -> одна краска с сохранением узора.
+
+    Для фигур годится силуэт (любая ненулевая краска - точка), но для земли
+    нет: в оригинале текстура набрана красками 1..3 и НИ ОДНОГО чёрного
+    пикселя не содержит, поэтому силуэт заливает клетку сплошняком и узор
+    пропадает совсем.
+
+    Порог берётся по самой светлой краске, встречающейся в ЭТОЙ текстуре, а не
+    общий на все восемь: каждая набрана своей парой красок (p1 - это 2 и 3,
+    p2 - 1 и 2), и любой общий порог гасит часть текстур в ноль.
+    """
+    top = max(v for row in rows for v in row)
+    return [[1 if v == top else 0 for v in row] for row in rows]
+
+
+def monochrome(image, outln):
+    """Четыре краски -> одна. Для фигур, в отличие от земли, годится силуэт.
+
+    Проверено по всем 77 спрайтам: медиана заполнения 35%, то есть фигуры
+    оригинала нарисованы штрихами по чёрному, а не залиты. Силуэт сохраняет
+    рисунок; сплошными выходят только текстуры земли, у которых своё правило.
+    """
+    img = [[1 if v else 0 for v in row] for row in image]
+    msk = [[0 if m == 0 else 1 for m in row] for row in outln]
+    return img, msk
 
 
 def shift_rows(rows, shift_px, out_w_px, fill):
@@ -76,18 +108,17 @@ def shift_rows(rows, shift_px, out_w_px, fill):
 
 
 def build_phases(image, outln):
-    """Строит список фаз: [(байт_в_строке, данные)] для сдвигов 0 и 2 px."""
+    """Строит список фаз: [(байт_в_строке, данные)] для сдвигов 0 и 4 точки."""
     w = len(image[0])
     phases = []
     for ph in range(PHASES):
         shift = ph * SUBSTEP_PX
-        # ширина в байтах с запасом на сдвиг, кратно 4 пикселям
-        out_w_px = ((w + shift + 3) // 4) * 4
+        out_w_px = ((w + shift + PX_PER_BYTE - 1) // PX_PER_BYTE) * PX_PER_BYTE
         img = shift_rows(image, shift, out_w_px, 0)   # вне спрайта - чёрное
-        msk = shift_rows(outln, shift, out_w_px, 3)   # вне спрайта - фон виден
-        ib = sprlib.pack_antice(img)
-        mb = sprlib.pack_antice(msk)
-        bpr = out_w_px // 4
+        msk = shift_rows(outln, shift, out_w_px, 1)   # вне спрайта - фон виден
+        ib = pack(img)
+        mb = pack(msk)
+        bpr = out_w_px // PX_PER_BYTE
         # чередование msk/img по строке (маска первой - см. шапку файла)
         data = bytearray()
         for y in range(len(img)):
@@ -101,14 +132,14 @@ def build_phases(image, outln):
 def emit_earth(sprites, path):
     """Текстуры земли p1..p8 отдельным файлом, как повторяющийся блок.
 
-    Клетка поля - 10 пикселей, в байте 4 пикселя, поэтому наименьший
-    байтовыровненный блок это НОК(10,4) = 20 пикселей = 5 байт = две клетки.
-    Поле шириной 40 байт заполняется восемью такими блоками подряд.
+    Клетка поля - 20 точек, в байте 8, поэтому наименьший байтовыровненный
+    блок это НОК(20,8) = 40 точек = 5 байт = две клетки. Поле шириной 40 байт
+    заполняется восемью такими блоками подряд.
     Маска здесь не нужна: земля выводится непрозрачно.
     """
     lines = [
         '; earth.s - СГЕНЕРИРОВАНО tools/spr2atari.py, не править вручную.',
-        '; Текстуры земли (спрайты p1..p8 оригинала, 20x4 px -> 10x4 px).',
+        '; Текстуры земли (спрайты p1..p8 оригинала, 20x4 точки).',
         '; Каждая - блок 5 байт x 4 строки, повторяется по горизонтали 8 раз',
         '; и по вертикали на всю высоту поля.',
         ';',
@@ -123,9 +154,9 @@ def emit_earth(sprites, path):
         if not (len(s['name']) == 2 and s['name'][0] == 'p'
                 and s['name'][1].isdigit()):
             continue
-        rows = s['small']                      # 10 px x 4 строки
-        doubled = [r + r for r in rows]        # 20 px = 5 байт
-        data = sprlib.pack_antice(doubled)
+        rows = threshold_tile(s['orig'])       # 20 точек x 4 строки
+        doubled = [r + r for r in rows]        # две клетки = 5 байт
+        data = pack(doubled)
         sym = '_earth_' + s['name']
         names.append(sym)
         lines.append(f'        .export {sym}')
@@ -147,11 +178,110 @@ def emit_earth(sprites, path):
     return len(names)
 
 
+def erode(mask):
+    """Убирает у области кайму в одну точку по четырём сторонам."""
+    h, w = len(mask), len(mask[0])
+    out = [[0] * w for _ in range(h)]
+    for y in range(h):
+        for x in range(w):
+            if not mask[y][x]:
+                continue
+            if x == 0 or y == 0 or x == w - 1 or y == h - 1:
+                continue
+            if mask[y][x - 1] and mask[y][x + 1] \
+                    and mask[y - 1][x] and mask[y + 1][x]:
+                out[y][x] = 1
+    return out
+
+
+def downsample(mask, rule):
+    """16 точек -> 8 бит: ячейка игрока накрывает ровно две точки."""
+    out = []
+    for row in mask:
+        b = 0
+        for i in range(8):
+            a, c = row[2 * i], row[2 * i + 1]
+            hit = (a and c) if rule != 'or' else (a or c)
+            if hit:
+                b |= 1 << (7 - i)
+        out.append(b)
+    return out
+
+
+def emit_pmg(sprites, path, fill_rule):
+    """Кадры Диггера для аппаратных спрайтов: три плана заливки по 15 байт.
+
+    Заливка ПОДКЛАДЫВАЕТСЯ ПОД рисунок, а не заменяет его. В кадровом буфере
+    Диггер по-прежнему выводится целиком на 320 точках; игроки красят его
+    изнутри, а по краю остаётся видна линия из кадрового буфера - в ней и
+    держится чёткость.
+
+    Почему именно так, а не игрок под полем: измерено, что поле высокого
+    разрешения участвует в разборе приоритетов целиком как COLPF2. При
+    приоритете поля над игроками ($04) зажжённые точки под игроком теряют
+    яркость COLPF1 и становятся фоном, то есть рисунок стирается. Положить
+    игрока под контур аппаратура не даёт.
+
+    Ячейка игрока - две точки (такт цвета), отсюда три правила сжатия:
+      erode - сначала у области снимается кайма в одну точку, потом пара точек
+              даёт бит, только если обе внутри. Линия по краю гарантированно
+              остаётся видна, но тонкие детали пропадают совсем.
+      and   - бит, если обе точки внутри. Край выживает через раз, по чётности.
+      or    - бит, если хоть одна. Цвет накрывает всю область вместе с краем.
+
+    Правило у всех планов 'and'. Пробовали красить колёса по 'or', чтобы они
+    тоже получили цвет: колёса нарисованы кольцами в одну точку толщиной, и
+    заливка накрывает их целиком, превращая в глухие квадраты. Кольцо шириной
+    четыре точки при ячейке игрока в две точки покрасить, не потеряв форму,
+    нельзя вообще - ни заливкой, ни заливкой с эрозией. Поэтому тонкие детали
+    остаются в цвете поля, зато со своей формой.
+
+    Планы идут по краскам оригинала: 2 - корпус, 1 - клюв, 3 - колёса.
+    Третий план всё же нужен: широкие части группы (например надстройка
+    сверху) в него попадают и цвет получают.
+    """
+    PLANES = (((2,), 'and'), ((1,), 'and'), ((3,), 'and'))
+    lines = [
+        '; pmspr.s - СГЕНЕРИРОВАНО tools/spr2atari.py, не править вручную.',
+        '; Заливка Диггера для аппаратных спрайтов, правило сжатия: %s' % fill_rule,
+        '; По байту на строку растра, 8 бит на 16 точек.',
+        '; План 0 - корпус (краска 2), 1 - клюв (краска 1), 2 - колёса (3).',
+        '',
+        '        .segment "RODATA"',
+        '',
+    ]
+    n = 0
+    by_name = {s['name']: s for s in sprites}
+    for name in MAN_FRAMES:
+        s = by_name.get(name)
+        if s is None:
+            print('нет кадра Диггера:', name, file=sys.stderr)
+            continue
+        for pl, (colors, rule) in enumerate(PLANES):
+            if fill_rule is not None:
+                rule = fill_rule            # общий ключ перебивает умолчания
+            area = [[1 if v in colors else 0 for v in row] for row in s['orig']]
+            if rule == 'erode':
+                area = erode(area)
+            data = downsample(area, rule)
+            sym = '_pm_%s_%d' % (name, pl)
+            lines.append('        .export %s' % sym)
+            lines.append('%s:            ; %d строк' % (sym, len(data)))
+            for b in data:
+                lines.append('        .byte $%02X' % b)
+            lines.append('')
+            n += 1
+    with open(path, 'w') as f:
+        f.write('\n'.join(lines) + '\n')
+    return n
+
+
 def emit_asm(sprites, path):
     lines = [
         '; sprites.s - СГЕНЕРИРОВАНО tools/spr2atari.py, не править вручную.',
         '; Источник: оригинальные спрайты Digger для PC (Sprites/*.SPR),',
-        '; сжатые вдвое по горизонтали под ANTIC E.',
+        '; переведённые в одну краску под ANTIC F. По горизонтали один к',
+        '; одному: и там и здесь 320 точек в строке.',
         ';',
         '; Раскладка каждой фазы: по строке идут пары (маска, изображение),',
         '; всего <байт_в_строке> пар на строку, <строк> строк.',
@@ -175,8 +305,6 @@ def emit_asm(sprites, path):
             seg1.add(s['name'])
             used += n
     # Что не влезло в первый - во второй, а что не влезло и туда - в MAIN.
-    # Ничего не выбрасывается: под ПЗУ всего 9210 байт, а спрайтов чуть
-    # больше, и остаток спокойно живёт в обычной памяти.
     seg2, used2 = set(), 0
     for s in sprites:
         if s['name'] in seg1:
@@ -201,7 +329,7 @@ def emit_asm(sprites, path):
             cur_seg = want
             lines.append('        .segment "%s"' % want)
             lines.append('')
-        lines.append(f'; --- {name}: {s["w"]} x {h} px ---')
+        lines.append(f'; --- {name}: {s["w"]} x {h} точек ---')
         for ph, (bpr, data) in enumerate(phases):
             sym = f'_spr_{name}_p{ph}'
             lines.append(f'        .export {sym}')
@@ -216,18 +344,16 @@ def emit_asm(sprites, path):
 
 
 def contact_sheet(sprites, path, scale=4):
-    """Контрольный лист: слева оригинал, справа результат ÷2."""
+    """Контрольный лист: слева оригинал в красках CGA, справа результат."""
     try:
         from PIL import Image, ImageDraw
     except ImportError:
         print('PIL не установлен - контрольный лист пропущен', file=sys.stderr)
         return
-    # Палитра листа обязана совпадать с игровой, иначе сверять спрайты по
-    # нему бессмысленно. Значения - примерные RGB для цветов Atari,
-    # заданных в src/hw.h: $C8 зелёный, $38 красный, $1A жёлтый. Яркость
-    # средняя намеренно: на Atari светлота и насыщенность работают друг
-    # против друга, и у предельных значений цвета уходят к белому.
-    pal = [(0, 0, 0), (60, 175, 60), (190, 70, 55), (205, 150, 60)]
+    # Правая половина рисуется цветами ИГРЫ, иначе сверять по листу
+    # бессмысленно: янтарный монохром из src/hw.h, оттенок 1 при яркости 12.
+    pal_src = [(0, 0, 0), (60, 175, 60), (190, 70, 55), (205, 150, 60)]
+    pal_dst = [(0, 0, 0), (215, 160, 60)]
     cols = 8
     cw, chh = 40, 30
     rows = (len(sprites) + cols - 1) // cols
@@ -236,19 +362,18 @@ def contact_sheet(sprites, path, scale=4):
     for i, s in enumerate(sprites):
         cx = (i % cols) * cw * scale
         cy = (i // cols) * chh * scale
-        # оригинал
         for y, row in enumerate(s['orig']):
             for x, v in enumerate(row):
                 d.rectangle([cx + x * scale, cy + y * scale,
                              cx + (x + 1) * scale - 1, cy + (y + 1) * scale - 1],
-                            fill=pal[v])
+                            fill=pal_src[v])
         # результат, правее
         ox = cx + (len(s['orig'][0]) + 2) * scale
         for y, row in enumerate(s['small']):
             for x, v in enumerate(row):
                 d.rectangle([ox + x * scale, cy + y * scale,
                              ox + (x + 1) * scale - 1, cy + (y + 1) * scale - 1],
-                            fill=pal[v])
+                            fill=pal_dst[v])
     im.save(path)
 
 
@@ -257,6 +382,11 @@ def main():
     ap.add_argument('--src', default='/mnt/storage2/Games/Digger/src/Sprites')
     ap.add_argument('--asm', default='assets/sprites.s')
     ap.add_argument('--earth', default='assets/earth.s')
+    ap.add_argument('--pmg', default='assets/pmspr.s')
+    ap.add_argument('--fill', default=None,
+                    choices=('erode', 'and', 'or'),
+                    help='одно правило сжатия на все планы; по умолчанию у '
+                         'каждого плана своё, см. emit_pmg()')
     ap.add_argument('--sheet', default='build/sprites_sheet.png')
     a = ap.parse_args()
 
@@ -268,7 +398,7 @@ def main():
             continue
         if s.name in SKIP:
             continue
-        img, msk = halve(s.image, s.outln)
+        img, msk = monochrome(s.image, s.outln)
         sprites.append({
             'name': s.name,
             'w': len(img[0]),
@@ -282,14 +412,17 @@ def main():
     os.makedirs(os.path.dirname(a.sheet), exist_ok=True)
     emit_asm(sprites, a.asm)
     n_earth = emit_earth(sprites, a.earth)
+    n_pmg = emit_pmg(sprites, a.pmg, a.fill)
     contact_sheet(sprites, a.sheet)
 
     total = sum(len(d) for s in sprites for _, d in s['phases'])
     print(f'спрайтов: {len(sprites)}')
     print(f'данных (обе фазы, изображение+маска): {total} байт')
     print(f'текстур земли: {n_earth}')
+    print(f'планов PMG: {n_pmg} (заливка: {a.fill or "по умолчанию"})')
     print(f'asm:   {a.asm}')
     print(f'земля: {a.earth}')
+    print(f'PMG:   {a.pmg}')
     print(f'лист:  {a.sheet}')
 
 

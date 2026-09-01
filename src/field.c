@@ -5,6 +5,7 @@
 #include "field.h"
 #include "screen.h"
 #include "blit.h"
+#include "game.h"
 
 /* Данные из assets/, сгенерированные конвертерами */
 extern const uint8_t level_data[];      /* levels.s: 80 байт на уровень   */
@@ -13,6 +14,16 @@ extern const uint8_t spr_cn_p0[];       /* камень, фаза 0 */
 extern const uint8_t spr_cn_p1[];       /* камень, фаза 1 */
 extern const uint8_t spr_b4_p0[];       /* мешок, фаза 0  */
 extern const uint8_t spr_b4_p1[];       /* мешок, фаза 1  */
+
+/*
+ * Закруглённые стиратели земли из оригинала: спрайты rt, lt, up, dn. У них
+ * пустое изображение и фигурная маска, поэтому обычный вывод с маской
+ * выгрызает ровно скруглённую форму, а остальное оставляет нетронутым.
+ */
+extern const uint8_t spr_rt_p0[], spr_rt_p1[];
+extern const uint8_t spr_lt_p0[], spr_lt_p1[];
+extern const uint8_t spr_up_p0[], spr_up_p1[];
+extern const uint8_t spr_dn_p0[], spr_dn_p1[];
 
 #define LEVEL_BYTES     80u             /* (15/2 + 1) * 10 */
 #define ROW_BYTES       8u              /* байт на строку карты */
@@ -33,7 +44,7 @@ uint8_t y_rem_tbl[SCR_LINES];
  * У нас всё вдвое уже по горизонтали: спрайт 8x15 в клетке 10x18,
  * остаются 2 px справа и 3 строки снизу.
  */
-#define CORRIDOR_W      SPRITE_W_PX     /* 8 px из 10  */
+#define CORRIDOR_W      SPRITE_W_SUB    /* 4 подшага из 5 */
 #define CORRIDOR_H      SPRITE_H        /* 15 строк из 18 */
 
 void field_build_tables(void)
@@ -87,11 +98,11 @@ uint8_t level_sym(uint8_t screen, uint8_t x, uint8_t y)
  * Сама процедура лежит в blit.s: её версия на Си неверно собиралась
  * с оптимизацией (см. комментарий там).
  */
-void clear_px_at(uint8_t x_px, uint8_t y, uint8_t w_px, uint8_t h)
+void clear_px_at(uint8_t x_sub, uint8_t y, uint8_t w_sub, uint8_t h)
 {
-    cp_x = x_px;
+    cp_x = x_sub;
     cp_y = y;
-    cp_w = w_px;
+    cp_w = w_sub;
     cp_h = h;
     clear_px();
 }
@@ -111,6 +122,69 @@ static void draw_earth(uint8_t screen)
             for (b = 0; b < 5u; ++b)
                 p[i + b] = src[b];
     }
+}
+
+/*
+ * field_gnaw - закруглить край прокопанного хода в направлении движения.
+ *
+ * Без этого ход остаётся строгим прямоугольником: clear_px гасит прямые
+ * стенки, а в оригинале у хода закруглённые торцы с зазубринами. Формы взяты
+ * оттуда же (спрайты rt, lt, up, dn), смещения - из era_right/era_left/
+ * era_up/era_down в Source/IMAGE_B.C, переведённые из точек в подшаги:
+ *
+ *      вправо  (x+16, y-1)   ->  подшаг +4, строка -1
+ *      влево   (x-8,  y-1)   ->  подшаг -2, строка -1
+ *      вверх   (x-4,  y-6)   ->  подшаг -1, строка -6
+ *      вниз    (x-4,  y+15)  ->  подшаг -1, строка +15
+ *
+ * Стиратель вверх и вниз выходит за поле: сверху он задел бы полосу счёта,
+ * снизу - вышел бы за последнюю строку буфера. Поэтому строки вне поля
+ * отбрасываются, а источник сдвигается на столько же строк вперёд.
+ */
+void field_gnaw(uint8_t dir, uint8_t x_sub, uint8_t y)
+{
+    static const int8_t dx[4] = {  4, -2, -1, -1 };   /* RIGHT, LEFT, DOWN, UP */
+    static const int8_t dy[4] = { -1, -1, 15, -6 };
+    static const uint8_t hgt[4] = { 18u, 18u, 6u, 6u };
+    static const uint8_t *const spr[4][2] = {
+        { spr_rt_p0, spr_rt_p1 }, { spr_lt_p0, spr_lt_p1 },
+        { spr_dn_p0, spr_dn_p1 }, { spr_up_p0, spr_up_p1 },
+    };
+
+    uint8_t sub, w, h, skip;
+    int16_t top;
+
+    if (dir > DIR_UP)
+        return;
+
+    sub = (uint8_t)(x_sub + dx[dir]);
+    top = (int16_t)y + dy[dir];
+    h = hgt[dir];
+
+    /* строки выше поля отбрасываем вместе с их данными */
+    skip = 0;
+    if (top < (int16_t)FIELD_Y_OFFSET) {
+        skip = (uint8_t)((int16_t)FIELD_Y_OFFSET - top);
+        if (skip >= h)
+            return;
+        top = (int16_t)FIELD_Y_OFFSET;
+        h = (uint8_t)(h - skip);
+    }
+    if (top + h > (int16_t)SCR_LINES)
+        h = (uint8_t)((int16_t)SCR_LINES - top);
+
+    /* ширина: узкие торцы - байт, широкие - три; сдвинутая фаза на байт шире */
+    w = (dir == DIR_RIGHT || dir == DIR_LEFT) ? 1u : 3u;
+    if (sub & 1u)
+        ++w;
+
+    bl_x = (uint8_t)(sub >> 1);
+    bl_y = (uint8_t)top;
+    bl_w = w;
+    bl_h = h;
+    /* строка данных - w пар (маска, изображение) */
+    bl_src = spr[dir][sub & 1u] + (unsigned)skip * w * 2u;
+    blit_mask();
 }
 
 /* Выводит спрайт по координате в подшагах: фаза выбирается по младшему биту */
@@ -163,11 +237,11 @@ void field_redraw(uint8_t screen)
     for (y = 0; y < H_MAX; ++y) {
         uint8_t cy = (uint8_t)(FIELD_Y_OFFSET + y * CELL_H_PX);
         for (x = 0; x < W_MAX; ++x) {
-            uint8_t cx = (uint8_t)(FIELD_X0_PX + x * CELL_W_PX);
+            uint8_t cx = (uint8_t)(FIELD_X_OFFSET + x * CELL_W_SUB);
             if ((background[y][x] & BG_VERT_ALL) != BG_VERT_ALL)
                 clear_px_at(cx, cy, CORRIDOR_W, CELL_H_PX);
             if ((background[y][x] & BG_HORIZ_ALL) != BG_HORIZ_ALL)
-                clear_px_at(cx, cy, CELL_W_PX, CORRIDOR_H);
+                clear_px_at(cx, cy, CELL_W_SUB, CORRIDOR_H);
         }
     }
 

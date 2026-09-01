@@ -23,7 +23,6 @@ static uint8_t lives_shown = 0xFF;
 
 void hud_init(void)
 {
-    text_init(2);                       /* цвет надписей - COLPF1 */
     lives_shown = 0xFF;
     /* Подписи SCORE нет: в оригинале счёт стоит сам по себе */
 }
@@ -46,9 +45,9 @@ void hud_lives(uint8_t n)
 
     /* Полоса значков перерисовывается целиком: она короткая, а следить за
      * тем, какой именно значок пропал, дороже, чем стереть и нарисовать. */
-    cp_x = (uint8_t)(LIVES_X * 4u);
+    cp_x = (uint8_t)(LIVES_X * SUBSTEP_PER_BYTE);
     cp_y = LIVES_Y;
-    cp_w = (uint8_t)(MAX_LIVES * 8u);
+    cp_w = (uint8_t)(MAX_LIVES * 2u * SUBSTEP_PER_BYTE);
     cp_h = 15u;
     clear_px();
 

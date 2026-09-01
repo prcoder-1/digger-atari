@@ -21,6 +21,9 @@
 #include "sfx.h"
 #include "menu.h"
 #include "blit.h"
+#ifdef DIGGER_PMG
+#include "pmg.h"
+#endif
 
 extern const uint8_t spr_z1_p0[];
 extern uint8_t score[3];
@@ -213,6 +216,17 @@ int main(void)
     uint8_t march_note = 0, march_left = 0, rip_shown = 0xFF;
     dir_t want, kd;
 
+#ifdef DIGGER_PMG
+    /*
+     * Раньше screen_init: тот включает выборку игроков в DMACTL, и к этому
+     * моменту PMBASE обязан указывать на уже очищенный буфер - иначе ANTIC
+     * успеет вывести на экран мусор из непроинициализированной памяти.
+     */
+    pmg_init();
+    OS_PCOLR0 = COL_PM0;
+    OS_PCOLR1 = COL_PM1;
+    OS_PCOLR2 = COL_PM2;
+#endif
     screen_init();
     field_build_tables();
     sfx_init();
@@ -259,6 +273,18 @@ int main(void)
         /* Вместо ввода - зашитый маршрут; телеметрия рисуется каждый такт */
         want = demo_input();
         (void)kd;
+
+        /*
+         * Маршрут кончился - игра замирает целиком. Замирания одного счётчика
+         * тактов мало: враги продолжали ходить, счётчики звука росли, и числа
+         * зависели от того, на какой секунде снят кадр. Проверка при этом
+         * сравнивала состояние по настенным часам, а не по такту, и падала
+         * от одной только загрузки машины.
+         */
+        if (demo_finished()) {
+            demo_telemetry();
+            continue;
+        }
 #else
         want = stick_dir(vbi_stick);
         kd = key_dir();
@@ -317,7 +343,7 @@ int main(void)
             /* Вишенка появляется, когда рождать больше некого */
             if (bonus_state == BONUS_OFF && bugs_left_to_spawn() == 0u) {
                 bonus_state = BONUS_READY;
-                bl_x = (uint8_t)((FIELD_X0_PX + (W_MAX - 1u) * CELL_W_PX) >> 2);
+                bl_x = (uint8_t)((FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB) >> 1);
                 bl_y = FIELD_Y_OFFSET;
                 bl_w = 2;
                 bl_h = SPRITE_H;
@@ -368,6 +394,11 @@ int main(void)
                     bugs_remove(hit);
 #else
                     state = ST_DYING;
+#ifdef DIGGER_PMG
+                    /* Надгробие растёт в кадровом буфере, а не в спрайте:
+                     * фигура Диггера должна уйти с экрана. */
+                    pmg_hide();
+#endif
                     dying = DYING_TICKS;
                     march_note = 0;
                     march_left = 0;
@@ -431,15 +462,14 @@ int main(void)
                 uint8_t stage = (uint8_t)((elapsed - DEATH_SWEEP - DEATH_PAUSE)
                                           / RIP_STAGE);
                 if (stage < 5u && stage != rip_shown) {
-                    uint8_t px = (uint8_t)(man.x * SUBSTEP_X_PX);
                     rip_shown = stage;
-                    cp_x = px; cp_y = man.y;
-                    cp_w = SPRITE_W_PX; cp_h = SPRITE_H;
+                    cp_x = man.x; cp_y = man.y;
+                    cp_w = SPRITE_W_SUB; cp_h = SPRITE_H;
                     clear_px();
-                    bl_x = (uint8_t)(px >> 2);
+                    bl_x = (uint8_t)(man.x >> 1);
                     bl_y = man.y;
                     bl_h = SPRITE_H;
-                    if (px & 2u) { bl_w = 3; bl_src = rip_spr[stage][1]; }
+                    if (man.x & 1u) { bl_w = 3; bl_src = rip_spr[stage][1]; }
                     else         { bl_w = 2; bl_src = rip_spr[stage][0]; }
                     blit_mask();
                 }

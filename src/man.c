@@ -17,6 +17,9 @@
 #include "hud.h"
 #include "bags.h"
 #include "sfx.h"
+#ifdef DIGGER_PMG
+#include "pmg.h"
+#endif
 
 /* Спрайты Диггера: по три фазы на каждое из четырёх направлений */
 extern const uint8_t spr_r0_p0[], spr_r0_p1[];
@@ -31,6 +34,24 @@ extern const uint8_t spr_u2_p0[], spr_u2_p1[];
 extern const uint8_t spr_d0_p0[], spr_d0_p1[];
 extern const uint8_t spr_d1_p0[], spr_d1_p1[];
 extern const uint8_t spr_d2_p0[], spr_d2_p1[];
+
+#ifdef DIGGER_PMG
+/* Заливка для аппаратных спрайтов: три плана на кадр (корпус, клюв, колёса).
+ * Предсдвинутых фаз здесь нет - позиция игрока задаётся регистром HPOS с
+ * точностью до такта цвета, то есть вдвое мельче нашего подшага. */
+extern const uint8_t pm_r0_0[], pm_r0_1[], pm_r0_2[];
+extern const uint8_t pm_r1_0[], pm_r1_1[], pm_r1_2[];
+extern const uint8_t pm_r2_0[], pm_r2_1[], pm_r2_2[];
+extern const uint8_t pm_l0_0[], pm_l0_1[], pm_l0_2[];
+extern const uint8_t pm_l1_0[], pm_l1_1[], pm_l1_2[];
+extern const uint8_t pm_l2_0[], pm_l2_1[], pm_l2_2[];
+extern const uint8_t pm_d0_0[], pm_d0_1[], pm_d0_2[];
+extern const uint8_t pm_d1_0[], pm_d1_1[], pm_d1_2[];
+extern const uint8_t pm_d2_0[], pm_d2_1[], pm_d2_2[];
+extern const uint8_t pm_u0_0[], pm_u0_1[], pm_u0_2[];
+extern const uint8_t pm_u1_0[], pm_u1_1[], pm_u1_2[];
+extern const uint8_t pm_u2_0[], pm_u2_1[], pm_u2_2[];
+#endif
 
 man_t man;
 
@@ -60,6 +81,20 @@ static const uint8_t *const man_spr[4][3][2] = {
     { { spr_u0_p0, spr_u0_p1 }, { spr_u1_p0, spr_u1_p1 },
       { spr_u2_p0, spr_u2_p1 } },
 };
+
+#ifdef DIGGER_PMG
+/* [направление][кадр][план] - порядок направлений тот же, что выше */
+static const uint8_t *const man_pm[4][3][3] = {
+    { { pm_r0_0, pm_r0_1, pm_r0_2 }, { pm_r1_0, pm_r1_1, pm_r1_2 },
+      { pm_r2_0, pm_r2_1, pm_r2_2 } },
+    { { pm_l0_0, pm_l0_1, pm_l0_2 }, { pm_l1_0, pm_l1_1, pm_l1_2 },
+      { pm_l2_0, pm_l2_1, pm_l2_2 } },
+    { { pm_d0_0, pm_d0_1, pm_d0_2 }, { pm_d1_0, pm_d1_1, pm_d1_2 },
+      { pm_d2_0, pm_d2_1, pm_d2_2 } },
+    { { pm_u0_0, pm_u0_1, pm_u0_2 }, { pm_u1_0, pm_u1_1, pm_u1_2 },
+      { pm_u2_0, pm_u2_1, pm_u2_2 } },
+};
+#endif
 
 void man_init(void)
 {
@@ -106,17 +141,30 @@ static void take_coin(void)
     hud_score();
 }
 
-/* Выводит Диггера в текущей позиции */
+/*
+ * Выводит Диггера в текущей позиции.
+ *
+ * В сборке DIGGER_PMG рисунок остаётся тот же и в том же кадровом буфере -
+ * аппаратные спрайты лишь подкладывают под него цвет, поэтому выводится и то,
+ * и другое. Заливка идёт первой: она грубее рисунка, и линии по краю должны
+ * лечь поверх неё, а не наоборот.
+ */
 static void man_draw(void)
 {
-    uint8_t px = (uint8_t)(man.x * SUBSTEP_X_PX);
-
-    bl_x = (uint8_t)(px >> 2);
+#ifdef DIGGER_PMG
+    pmg_x = man.x;
+    pmg_y = man.y;
+    pmg_s0 = man_pm[man.dir][man.frame][0];
+    pmg_s1 = man_pm[man.dir][man.frame][1];
+    pmg_s2 = man_pm[man.dir][man.frame][2];
+    pmg_show();
+#endif
+    bl_x = (uint8_t)(man.x >> 1);
     bl_y = man.y;
     bl_h = SPRITE_H;
-    /* Спрайт стоит на границе байта, когда px кратен 4; иначе берётся
-     * предсдвинутая на 2 пикселя фаза, которая на байт шире. */
-    if (px & 2u) {
+    /* Спрайт стоит на границе байта при чётном подшаге; при нечётном берётся
+     * предсдвинутая на полбайта фаза, которая на байт шире. */
+    if (man.x & 1u) {
         bl_w = 3;
         bl_src = man_spr[man.dir][man.frame][1];
     } else {
@@ -135,19 +183,19 @@ static void man_draw(void)
  * кадров не совпадают, и след виден. У мешков и врагов старое место
  * гасится целиком - Диггер должен вести себя так же.
  */
-static void man_erase(uint8_t px, uint8_t y)
+static void man_erase(uint8_t sx, uint8_t y)
 {
-    cp_x = px;
+    cp_x = sx;
     cp_y = y;
-    cp_w = SPRITE_W_PX;
+    cp_w = SPRITE_W_SUB;
     cp_h = SPRITE_H;
     clear_px();
 }
 
-/* Гасит полосу шириной w пикселей и высотой h в позиции (px, y) */
-static void carve(uint8_t px, uint8_t y, uint8_t w, uint8_t h)
+/* Гасит полосу шириной w подшагов и высотой h строк в позиции (sx, y) */
+static void carve(uint8_t sx, uint8_t y, uint8_t w, uint8_t h)
 {
-    cp_x = px;
+    cp_x = sx;
     cp_y = y;
     cp_w = w;
     cp_h = h;
@@ -243,7 +291,7 @@ static uint8_t aligned(void)
 
 void man_tick(dir_t want)
 {
-    uint8_t px, old_px, old_y;
+    uint8_t sx, old_sx, old_y;
 
     if (want != DIR_STOP) {
         /* Разворот назад разрешён всегда, поворот поперёк - только в клетке */
@@ -255,14 +303,14 @@ void man_tick(dir_t want)
     if (want == DIR_STOP || !can_move(man.dir)) {
         /* Стоя на месте Диггер всё равно перебирает фазы, поэтому старое
          * изображение надо погасить и здесь. */
-        man_erase((uint8_t)(man.x * SUBSTEP_X_PX), man.y);
+        man_erase(man.x, man.y);
         next_frame();
         take_coin();
         man_draw();
         return;
     }
 
-    old_px = (uint8_t)(man.x * SUBSTEP_X_PX);
+    old_sx = man.x;
     old_y = man.y;
 
     if (man.dir == DIR_RIGHT || man.dir == DIR_LEFT) {
@@ -282,36 +330,38 @@ void man_tick(dir_t want)
     default: break;
     }
 
-    px = (uint8_t)(man.x * SUBSTEP_X_PX);
+    sx = man.x;
 
     dig_background(man.dir);
 
     /* Прокопка перед собой и гашение следа за собой */
     switch (man.dir) {
     case DIR_RIGHT:
-        carve((uint8_t)(px + SPRITE_W_PX - SUBSTEP_X_PX), man.y,
-              SUBSTEP_X_PX, SPRITE_H);
-        carve(old_px, man.y, SUBSTEP_X_PX, SPRITE_H);
+        carve((uint8_t)(sx + SPRITE_W_SUB - 1u), man.y, 1u, SPRITE_H);
+        carve(old_sx, man.y, 1u, SPRITE_H);
         break;
     case DIR_LEFT:
-        carve(px, man.y, SUBSTEP_X_PX, SPRITE_H);
-        carve((uint8_t)(old_px + SPRITE_W_PX - SUBSTEP_X_PX), man.y,
-              SUBSTEP_X_PX, SPRITE_H);
+        carve(sx, man.y, 1u, SPRITE_H);
+        carve((uint8_t)(old_sx + SPRITE_W_SUB - 1u), man.y, 1u, SPRITE_H);
         break;
     case DIR_DOWN:
-        carve(px, (uint8_t)(man.y + SPRITE_H - SUBSTEP_Y_LINES),
-              SPRITE_W_PX, SUBSTEP_Y_LINES);
-        carve(px, old_y, SPRITE_W_PX, SUBSTEP_Y_LINES);
+        carve(sx, (uint8_t)(man.y + SPRITE_H - SUBSTEP_Y_LINES),
+              SPRITE_W_SUB, SUBSTEP_Y_LINES);
+        carve(sx, old_y, SPRITE_W_SUB, SUBSTEP_Y_LINES);
         break;
     case DIR_UP:
-        carve(px, man.y, SPRITE_W_PX, SUBSTEP_Y_LINES);
-        carve(px, (uint8_t)(old_y + SPRITE_H - SUBSTEP_Y_LINES),
-              SPRITE_W_PX, SUBSTEP_Y_LINES);
+        carve(sx, man.y, SPRITE_W_SUB, SUBSTEP_Y_LINES);
+        carve(sx, (uint8_t)(old_y + SPRITE_H - SUBSTEP_Y_LINES),
+              SPRITE_W_SUB, SUBSTEP_Y_LINES);
         break;
     default: break;
     }
 
-    man_erase(old_px, old_y);
+    /* Закруглить торец хода. В оригинале era_right/left/up/down зовётся с
+     * ПРЕЖНЕЙ позицией, до сдвига, - отсюда old_sx/old_y. */
+    field_gnaw(man.dir, old_sx, old_y);
+
+    man_erase(old_sx, old_y);
     next_frame();
 
     take_coin();
