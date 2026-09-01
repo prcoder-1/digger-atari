@@ -228,6 +228,48 @@ uint8_t field_coins_left(void)
  * поэтому после гибели Диггера собранные камни не возвращаются, а
  * прокопанные ходы остаются - как в оригинале.
  */
+/*
+ * era_path из оригинала (Work/TG.C): готовые ходы уровня прокапываются ТЕМИ ЖЕ
+ * закруглёнными стирателями, что и ход перед Диггером, - прогоном подряд, как
+ * будто по клетке кто-то прошёл. Прямоугольником рисовать нельзя: у ходов
+ * получаются рубленые торцы и прямые углы на поворотах, а Диггер рядом копает
+ * полукругом, и разница бросается в глаза.
+ *
+ * Смещения взяты у оригинала один в один, только точки переведены в подшаги
+ * (16 точек = 4 подшага). Промежуточные аргументы могут уйти "левее нуля" -
+ * это нормально: арифметика байтовая и замкнутая, а конечное место вывода
+ * (x_sub - 1 .. x_sub + 3) в поле помещается.
+ */
+static void draw_path(uint8_t xl, uint8_t yl)
+{
+    uint8_t sx = (uint8_t)(FIELD_X_OFFSET + xl * CELL_W_SUB);
+    uint8_t cy = (uint8_t)(FIELD_Y_OFFSET + yl * CELL_H_PX);
+    uint16_t bg = background[yl][xl];
+
+    if ((bg & BG_VERT_ALL) != BG_VERT_ALL) {        /* вертикальный ход */
+        field_gnaw(DIR_DOWN, sx, (uint8_t)(cy - 15u));
+        field_gnaw(DIR_DOWN, sx, (uint8_t)(cy - 12u));
+        field_gnaw(DIR_DOWN, sx, (uint8_t)(cy - 9u));
+        field_gnaw(DIR_DOWN, sx, (uint8_t)(cy - 6u));
+        field_gnaw(DIR_DOWN, sx, (uint8_t)(cy - 3u));
+        field_gnaw(DIR_UP,   sx, (uint8_t)(cy + 3u));
+    }
+    if ((bg & BG_HORIZ_ALL) != BG_HORIZ_ALL) {      /* горизонтальный ход */
+        field_gnaw(DIR_RIGHT, (uint8_t)(sx - 4u), cy);
+        field_gnaw(DIR_RIGHT, (uint8_t)(sx - 3u), cy);
+        field_gnaw(DIR_RIGHT, (uint8_t)(sx - 2u), cy);
+        field_gnaw(DIR_RIGHT, (uint8_t)(sx - 1u), cy);
+        field_gnaw(DIR_LEFT,  (uint8_t)(sx + 1u), cy);
+    }
+    /* Стыки с соседями: без них на повороте остаётся угол */
+    if (xl + 1u < W_MAX &&
+        (background[yl][xl + 1u] & BG_ANY_BITE) != BG_ANY_BITE)
+        field_gnaw(DIR_RIGHT, sx, cy);
+    if (yl + 1u < H_MAX &&
+        (background[yl + 1u][xl] & BG_ANY_BITE) != BG_ANY_BITE)
+        field_gnaw(DIR_DOWN, sx, cy);
+}
+
 void field_redraw(uint8_t screen)
 {
     uint8_t x, y;
@@ -237,11 +279,16 @@ void field_redraw(uint8_t screen)
     for (y = 0; y < H_MAX; ++y) {
         uint8_t cy = (uint8_t)(FIELD_Y_OFFSET + y * CELL_H_PX);
         for (x = 0; x < W_MAX; ++x) {
-            uint8_t cx = (uint8_t)(FIELD_X_OFFSET + x * CELL_W_SUB);
-            if ((background[y][x] & BG_VERT_ALL) != BG_VERT_ALL)
-                clear_px_at(cx, cy, CORRIDOR_W, CELL_H_PX);
-            if ((background[y][x] & BG_HORIZ_ALL) != BG_HORIZ_ALL)
-                clear_px_at(cx, cy, CELL_W_SUB, CORRIDOR_H);
+            /*
+             * Условие шире, чем в оригинале. Там era_path зовётся только при
+             * старте уровня, где клетка либо прокопана насквозь, либо цела, и
+             * хватает бита "клетка цела". У нас та же процедура перерисовывает
+             * поле после гибели, когда есть клетки, надкусанные лишь частично:
+             * по биту "цела" они бы не перерисовались и ход пропал бы с экрана.
+             * Поэтому берём любой укус, а какие оси рисовать, решает draw_path.
+             */
+            if ((background[y][x] & BG_ANY_BITE) != BG_ANY_BITE)
+                draw_path(x, y);
         }
     }
 

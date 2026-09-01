@@ -6,6 +6,8 @@
 #include "blit.h"
 #include "game.h"
 #include "sfx.h"
+#include "bugs.h"
+#include "hud.h"
 
 extern const uint8_t spr_b4_p0[], spr_b4_p1[];   /* стоит / наклон влево  */
 extern const uint8_t spr_b5_p0[], spr_b5_p1[];   /* наклон вправо         */
@@ -18,13 +20,10 @@ void __fastcall__ score_add(unsigned int bcd);
 
 bag_t bags[MAX_BAGS];
 
-/* Все биты укусов: пять горизонтальных и шесть вертикальных.
- * Клетка нетронута, когда все они установлены (см. шапку bags.h). */
-#define BG_ANY_BITE   (BG_HORIZ_ALL | BG_VERT_ALL)      /* 0x0FDF */
-
 #define BAG_FALL_STEP (2u * SUBSTEP_Y_LINES)    /* падает вдвое быстрее ходьбы */
 #define BREAK_TICKS   3u
 #define GOLD_SCORE    0x0500u                   /* 500 очков за золото */
+#define BAG_BUG_SCORE 0x0250u                   /* 250 очков за придавленного врага */
 
 static const uint8_t *const bag_spr[6][2] = {
     { spr_b4_p0, spr_b4_p1 },   /* BAG_NONE не рисуется, место занято  */
@@ -76,6 +75,7 @@ void bags_init(uint8_t screen)
             bags[n].state = BAG_STANDING;
             bags[n].x = (uint8_t)(FIELD_X_OFFSET + x * POS_X_STEP);
             bags[n].y = (uint8_t)(FIELD_Y_OFFSET + y * CELL_H_PX);
+            bags[n].dir = DIR_STOP;
             bags[n].count = 0;
             bags[n].fell = 0;
             ++n;
@@ -92,6 +92,70 @@ static uint8_t supported(const bag_t *b)
     if (yl >= H_MAX)
         return 1;                       /* дно поля держит */
     return (uint8_t)((background[yl][xl] & BG_ANY_BITE) == BG_ANY_BITE);
+}
+
+/*
+ * Падающий мешок прогрызает себе шахту: помечает клетку ПОД собой выеденной
+ * и уничтожает лежащий там камень. Перенос era_background(...,DOWN) и
+ * dest_coin() из оригинала (Work/TB.C).
+ *
+ * На то, когда мешок остановится, это не влияет - остановка считается по
+ * клетке снизу ДО отметки, как и в оригинале. Влияет на другое: без отметки
+ * пробитая шахта остаётся дырой только на картинке, а в модели поля там
+ * по-прежнему целая земля. Ноббины такой ход не видят и в него не идут, и
+ * опора соседних мешков считается по нетронутому грунту.
+ */
+static void bag_carve(const bag_t *b)
+{
+    uint8_t xl = x_log_tbl[b->x];
+    uint8_t yl = (uint8_t)(y_log_tbl[b->y] + 1u);
+    uint8_t yr = y_rem_tbl[b->y];
+
+    if (yl >= H_MAX)
+        return;
+    background[yl][xl] &= (uint16_t)~(1u << (yr + 6u));
+    if ((background[yl][xl] & BG_VERT_ALL) == 0u)
+        background[yl][xl] &= (uint16_t)~BG_INTACT;
+    field_take_coin(xl, yl);            /* камень в шахте уничтожается */
+}
+
+/*
+ * Накрывает ли падающий мешок точку (x, y). Габарит тот же, что у проверки
+ * столкновения с врагом. Условие y >= b->y из оригинала: мешок бьёт ВНИЗ,
+ * тех, кто оказался не выше его, - подойти к падающему мешку снизу смертельно,
+ * сверху нет.
+ */
+static uint8_t bag_covers(const bag_t *b, uint8_t x, uint8_t y)
+{
+    return (uint8_t)((uint8_t)(x - b->x + 3u) < 7u &&
+                     (uint16_t)(y - b->y + 14u) < 29u &&
+                     y >= b->y);
+}
+
+/* Есть ли падающий мешок, придавивший Диггера */
+uint8_t bags_hit_man(void)
+{
+    uint8_t i;
+    for (i = 0; i < MAX_BAGS; ++i)
+        if (bags[i].state == BAG_FALLING && bag_covers(&bags[i], man.x, man.y))
+            return 1;
+    return 0;
+}
+
+/* Придавленные падающим мешком враги гибнут - как от выстрела */
+static void bag_crush_bugs(const bag_t *b)
+{
+    uint8_t j;
+    for (j = 0; j < MAX_BUGS; ++j) {
+        if (bugs[j].state != BUG_ALIVE)
+            continue;
+        if (!bag_covers(b, bugs[j].x, bugs[j].y))
+            continue;
+        bugs_remove(j);
+        score_add(BAG_BUG_SCORE);
+        hud_score();
+        sfx_play(120u, SFX_THUD, 12u, 2u);
+    }
 }
 
 /* Ищет стоящий или качающийся мешок в клетке; 0xFF - мешка нет */
@@ -160,6 +224,7 @@ uint8_t bags_push(uint8_t x_log, uint8_t y_log, uint8_t dir)
         else
             --b->x;
         b->count = 0;
+        b->dir = dir;                   /* мешок катится, а не стоит */
         b->state = BAG_STANDING;
         bag_draw(b);
     }
@@ -178,9 +243,28 @@ void bags_tick(void)
             continue;
 
         case BAG_STANDING:
-            if (!supported(b)) {
-                b->state = BAG_LOOSE;
-                b->count = LOOSE_WAIT;
+            /*
+             * Проверка только на границе клетки по X: мешок, застигнутый
+             * посреди толчка, падать не должен.
+             *
+             * Дальше решает направление. Мешок, который ТОЛКАЮТ вбок и
+             * закатили на пустое место, проваливается сразу - раскачка тут
+             * ни к чему, его столкнули намеренно. Раскачивается только тот,
+             * что стоял неподвижно и под кем подкопали: это и есть
+             * предупреждение, что сейчас упадёт.
+             */
+            if (x_rem_tbl[b->x] == 0) {
+                if (!supported(b)) {
+                    if (b->dir == DIR_LEFT || b->dir == DIR_RIGHT) {
+                        b->state = BAG_FALLING;
+                        b->fell = 0;
+                    } else {
+                        b->state = BAG_LOOSE;
+                        b->count = LOOSE_WAIT;
+                    }
+                }
+                if (b->state != BAG_FALLING)
+                    b->dir = DIR_STOP;
             }
             break;
 
@@ -200,7 +284,9 @@ void bags_tick(void)
 
         case BAG_FALLING:
             bag_erase(b);
+            bag_carve(b);               /* до сдвига: отмечается клетка снизу */
             b->y = (uint8_t)(b->y + BAG_FALL_STEP);
+            bag_crush_bugs(b);
             /* Падение: тон тем ниже, чем дольше летит мешок */
             sfx_play((uint16_t)(32u + b->fell * 4u), SFX_TONE, 8u, 1u);
             if (b->fell < 40u)

@@ -213,6 +213,7 @@ int main(void)
     uint8_t state = ST_PLAY;
     uint8_t dying = 0;
     uint8_t hit;
+    uint8_t crushed;
     uint8_t march_note = 0, march_left = 0, rip_shown = 0xFF;
     dir_t want, kd;
 
@@ -333,6 +334,10 @@ int main(void)
 
                 field_init(screen);
                 man_init();
+                /* Мешки перезаводятся вместе с полем: без этого на новый
+                 * уровень переезжало их состояние с прошлого - падающие
+                 * продолжали падать, а разбитые оставались золотом. */
+                bags_init(screen);
                 bugs_init(screen, game_level > 10u ? 10u : game_level);
                 bonus_state = BONUS_OFF;
                 missile_init(game_level > 10u ? 10u : game_level);
@@ -373,9 +378,14 @@ int main(void)
                 }
             }
 
+            /*
+             * Падающий мешок давит Диггера. Бонус-режим тут не помогает: он
+             * меняет роли только с врагами, а мешок бьёт независимо от него.
+             */
+            crushed = bags_hit_man();
             hit = bugs_hit_man();
-            if (hit != BUG_NO_HIT) {
-                if (bonus_state == BONUS_ON) {
+            if (crushed || hit != BUG_NO_HIT) {
+                if (!crushed && bonus_state == BONUS_ON) {
                     /* Роли поменялись: враг съеден, очки удваиваются */
                     bugs_remove(hit);
                     ++bonus_eaten;
@@ -391,7 +401,8 @@ int main(void)
                      * может ли Диггер погибнуть, а без неё проверка зависела
                      * бы от везения - до вишенки он не доживал.
                      * В игру не входит. */
-                    bugs_remove(hit);
+                    if (!crushed)
+                        bugs_remove(hit);
 #else
                     state = ST_DYING;
 #ifdef DIGGER_PMG

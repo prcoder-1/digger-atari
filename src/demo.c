@@ -20,9 +20,15 @@
 #include "bugs.h"
 #include "missile.h"
 
+/*
+ * Длительность шага - ДВА байта. В маршруте под проверку снаряда стоял шаг
+ * { DIR_STOP, 300 }, и при однобайтовом поле он молча усекался до 44: прогон
+ * кончался на такте 133 вместо 389 и замирал, а со стороны это выглядело как
+ * зависание игры.
+ */
 typedef struct {
-    uint8_t dir;
-    uint8_t ticks;
+    uint8_t  dir;
+    uint16_t ticks;
 } demo_step;
 
 /*
@@ -79,7 +85,7 @@ static const demo_step route_full[] = {
 };
 
 static uint8_t step_no;
-static uint8_t step_left;
+static uint16_t step_left;
 static uint8_t finished;
 uint16_t demo_tick;
 
