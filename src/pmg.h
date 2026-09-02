@@ -43,10 +43,8 @@ void pmg_init(void);
 void pmg_show(void);
 void pmg_hide(void);
 
-/* Гасит области игроков врагов целиком */
-void pmg_bugs_clear(void);
-
-/* Кладёт план врага по pmg_by в область pmg_bpl */
+/* Кладёт план врага по pmg_by в область pmg_bpl. Стирание - это он же с
+ * указателем на пустой блок: отдельной процедуры не нужно. */
 void pmg_bug_put(void);
 
 #endif /* PMG_H */

@@ -52,6 +52,9 @@ extern uint8_t bugs_left_to_spawn(void);
 void bugs_init(uint8_t screen, uint8_t difficulty);
 void bugs_tick(void);
 
+/* Вывод врагов: зовётся ПОСЛЕДНИМ в такте, см. bugs.c */
+void bugs_draw_all(void);
+
 /* Убрать живых врагов после гибели Диггера, не восстанавливая их запас */
 void bugs_respawn(void);
 

@@ -10,8 +10,9 @@
 #define DLI_H
 
 #include <stdint.h>
+#include "hw.h"
 
-#define DLI_SLOTS   8           /* размер таблиц позиций, см. src/dli.s */
+#define DLI_SLOTS   DLI_GRID_N  /* по клетке сетки, см. src/dli.s */
 
 extern uint8_t dli_pf1;         /* яркость рисунка поля -> COLPF1 */
 extern uint8_t dli_pf2;         /* фон и оттенок поля   -> COLPF2 */

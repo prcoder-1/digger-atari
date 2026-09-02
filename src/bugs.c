@@ -5,6 +5,7 @@
 #include "field.h"
 #include "blit.h"
 #include "game.h"
+#include "pmgbug.h"
 
 /*
  * Ноббин и Хоббин - разные существа и внешне. В исходниках оригинала
@@ -43,8 +44,14 @@ static const uint8_t *const bug_spr[3][3][2] = {
       { spr_a2_p0, spr_a2_p1 } },
 };
 
-static void bug_draw(const bug_t *b)
+/*
+ * Выводит врага. Заливка аппаратного спрайта кладётся ЗДЕСЬ ЖЕ, вплотную к
+ * рисунку: кадровый буфер не двойной, вывод идёт посреди кадра, и растр видит
+ * любое расхождение между рисунком и заливкой (см. src/pmgbug.c).
+ */
+static void bug_draw(uint8_t idx)
 {
+    const bug_t *b = &bugs[idx];
     uint8_t look;
 
     /* У Хоббина своя графика на каждую сторону; при движении по вертикали
@@ -65,6 +72,7 @@ static void bug_draw(const bug_t *b)
         bl_src = bug_spr[look][b->frame % 3u][0];
     }
     blit_mask();
+    pmg_bug_show(idx);
 }
 
 /*
@@ -88,8 +96,20 @@ static uint8_t bug_touches_other(uint8_t i)
     return 0;
 }
 
-static void bug_erase(const bug_t *b)
+/*
+ * Стирает врага. Заливка аппаратного спрайта снимается ПЕРВОЙ, до рисунка.
+ *
+ * Порядок не косметика. Растр идёт по картинке всё время, и в зазор между
+ * двумя действиями он успевает пройти по врагу. Если сначала стереть рисунок,
+ * в этот зазор видна заливка БЕЗ фигуры - зелёный силуэт-призрак. В обратном
+ * порядке в зазоре видна фигура без цвета, чего почти не заметно. По той же
+ * причине в bug_draw заливка кладётся ПОСЛЕДНЕЙ, после рисунка.
+ */
+static void bug_erase(uint8_t idx)
 {
+    const bug_t *b = &bugs[idx];
+
+    pmg_bug_hide(idx);
     cp_x = b->x;
     cp_y = b->y;
     cp_w = SPRITE_W_SUB;
@@ -101,8 +121,13 @@ void bugs_init(uint8_t screen, uint8_t difficulty)
 {
     uint8_t x, y, i;
 
-    for (i = 0; i < MAX_BUGS; ++i)
+    /* Заливку аппаратных спрайтов снять ЯВНО: смена уровня перерисовывает
+     * кадровый буфер целиком, а буфер игроков - нет, и от прежних врагов
+     * остались бы зелёные пятна на новом поле. */
+    for (i = 0; i < MAX_BUGS; ++i) {
+        pmg_bug_hide(i);
         bugs[i].state = BUG_NONE;
+    }
     bugs_active = 0;
     bugs_fleeing = 0;
 
@@ -242,7 +267,7 @@ void bugs_respawn(void)
     uint8_t i;
     for (i = 0; i < MAX_BUGS; ++i) {
         if (bugs[i].state == BUG_ALIVE)
-            bug_erase(&bugs[i]);
+            bug_erase(i);
         bugs[i].state = BUG_NONE;
     }
     bugs_active = 0;
@@ -261,6 +286,10 @@ void bugs_tick(void)
     uint8_t old_x, old_y;       /* положение до шага - для прогрыза */
     uint8_t aligned;            /* стоит ровно в клетке */
     uint8_t order[4];
+
+    /* Кому из врагов достанется аппаратный спрайт. Раздаётся раз в такт, до
+     * всякого движения: сама заливка кладётся потом в bug_draw. */
+    pmg_bugs_assign();
 
     if (spawn_count == 0) {
         bug_spawn();
@@ -338,16 +367,15 @@ void bugs_tick(void)
                  * доведёт Ноббина до превращения, и он прогрызёт себе выход. */
                 if (b->kind == BUG_NOBBIN && b->count < 100u)
                     ++b->count;
-                bug_erase(b);
+                bug_erase(i);
                 ++b->frame;
-                bug_draw(b);
                 continue;
             }
         }
 
         old_x = b->x;
         old_y = b->y;
-        bug_erase(b);
+        bug_erase(i);
         switch (b->dir) {
         case DIR_RIGHT: ++b->x; break;
         case DIR_LEFT:  --b->x; break;
@@ -376,14 +404,33 @@ void bugs_tick(void)
         }
 
         ++b->frame;
-        bug_draw(b);
     }
+
+}
+
+/*
+ * Вывод врагов вынесен из такта ОТДЕЛЬНЫМ проходом и зовётся последним, когда
+ * отработали и снаряд, и столкновения.
+ *
+ * Иначе выведенного врага затирает прямоугольником тот, кто обрабатывается
+ * позже: сосед по списку своим стиранием, снаряд - своим. Раньше это стоило
+ * дырки в монохромной фигуре и почти не читалось, а с аппаратными спрайтами
+ * стало бросаться в глаза - рисунок пропал, заливка игрока осталась, и на
+ * экране сплошной зелёный блок без фигуры.
+ */
+void bugs_draw_all(void)
+{
+    uint8_t i;
+
+    for (i = 0; i < MAX_BUGS; ++i)
+        if (bugs[i].state == BUG_ALIVE)
+            bug_draw(i);
 }
 
 void bugs_remove(uint8_t i)
 {
     if (i < MAX_BUGS && bugs[i].state == BUG_ALIVE) {
-        bug_erase(&bugs[i]);
+        bug_erase(i);
         bugs[i].state = BUG_NONE;
         if (bugs_active)
             --bugs_active;
