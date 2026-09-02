@@ -224,8 +224,8 @@ int main(void)
     pmg_init();
     OS_PCOLR0 = COL_PM_BODY;
     OS_PCOLR1 = COL_PM_BEAK;
-    OS_PCOLR2 = COL_PM_NOBBIN;
-    OS_PCOLR3 = COL_PM_HOBBIN;
+    OS_PCOLR2 = COL_PM_BUG;
+    OS_PCOLR3 = COL_PM_BUG;
     screen_init();
     field_build_tables();
     sfx_init();
