@@ -20,6 +20,7 @@
         .export _sfx_writes
         .export _sfx_env_tick, _sfx_env_vol, _sfx_env_timbre
         .export _sfx_sweep
+        .export _sfx_money, _sfx_m1, _sfx_m2, _sfx_mvol
 
 AUDF1   = $D200
 AUDC1   = $D201
@@ -54,6 +55,24 @@ _sfx_env_timbre: .byte 0
 ; звучит это как мелодия, а не как скрежет. В БК-порте свип идёт шагами по
 ; паре миллисекунд, то есть непрерывно.
 _sfx_sweep:      .byte 0
+
+; Звук съедаемого золота. В оригинале (snd_money/chk_money в Work/TH.C) это
+; НЕ одиночный "динь", а тридцать коротких тонов подряд: чётные берут один
+; делитель, нечётные другой. После каждого тона первый делитель растёт на
+; одну шестнадцатую, второй на столько же убывает - высоты идут навстречу,
+; расходятся и снова расходятся. Отсюда характерное дребезжание.
+;
+; Тона идут по кадрам, то есть 50 в секунду: вся последовательность звучит
+; 0.6 с против примерно 0.3 с в оригинале, где счёт шёл от таймера. Чаще
+; кадрового прерывания нам менять высоту негде.
+;
+; Огибающая на время последовательности отключена: в оригинале громкость
+; держится, спад тут только смазал бы вторую половину.
+_sfx_money:  .byte 0            ; сколько тонов осталось
+_sfx_m1:     .res 2             ; делитель чётных тонов, ползёт ВВЕРХ
+_sfx_m2:     .res 2             ; делитель нечётных тонов, ползёт ВНИЗ
+_sfx_mvol:   .byte 0            ; тембр и громкость на всю последовательность
+sfx_mt:      .res 2             ; временное под сдвиг на четыре
 
 ; Накопительный счётчик записей в POKEY. Проверять звук снимком экрана
 ; нельзя, а счётчик показывает, доходит ли дело до чипа вообще.
@@ -120,6 +139,11 @@ _pokey_all_off:
 ; Громкость хранится с дробной частью (8.8), иначе при пятидесяти шагах в
 ; секунду затухание с 12 до нуля заняло бы четверть секунды на любой звук.
 _sfx_env_tick:
+        lda     _sfx_money
+        beq     env_normal
+        jmp     money_tick              ; золото ведёт канал само
+
+env_normal:
         lda     _sfx_env_vol
         beq     env_done                ; уже тихо
 
@@ -152,6 +176,67 @@ env_off:
         sta     _sfx_env_frac
         sta     AUDC2
 env_done:
+        rts
+
+; Очередной тон последовательности золота. Делитель берётся по чётности
+; номера, потом оба делителя расходятся на одну шестнадцатую.
+money_tick:
+        lda     _sfx_money
+        and     #1
+        bne     m_odd
+        lda     _sfx_m1
+        ldx     _sfx_m1+1
+        jmp     m_out
+m_odd:
+        lda     _sfx_m2
+        ldx     _sfx_m2+1
+m_out:
+        sta     AUDF1
+        stx     AUDF2
+        lda     #0
+        sta     AUDC1
+        lda     _sfx_mvol
+        sta     AUDC2
+
+        lda     _sfx_m1                 ; m1 += m1 >> 4
+        sta     sfx_mt
+        lda     _sfx_m1+1
+        sta     sfx_mt+1
+        ldx     #4
+m_sh1:  lsr     sfx_mt+1
+        ror     sfx_mt
+        dex
+        bne     m_sh1
+        clc
+        lda     _sfx_m1
+        adc     sfx_mt
+        sta     _sfx_m1
+        lda     _sfx_m1+1
+        adc     sfx_mt+1
+        sta     _sfx_m1+1
+
+        lda     _sfx_m2                 ; m2 -= m2 >> 4
+        sta     sfx_mt
+        lda     _sfx_m2+1
+        sta     sfx_mt+1
+        ldx     #4
+m_sh2:  lsr     sfx_mt+1
+        ror     sfx_mt
+        dex
+        bne     m_sh2
+        sec
+        lda     _sfx_m2
+        sbc     sfx_mt
+        sta     _sfx_m2
+        lda     _sfx_m2+1
+        sbc     sfx_mt+1
+        sta     _sfx_m2+1
+
+        dec     _sfx_money
+        bne     m_done
+        lda     #0
+        sta     AUDC2                   ; последовательность кончилась
+m_done:
         rts
 
 ; void sfx_apply(void) - выдать в чип текущие _sfx_f и _sfx_c

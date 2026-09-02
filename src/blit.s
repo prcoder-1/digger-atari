@@ -26,6 +26,7 @@
 
         .export _bl_x, _bl_y, _bl_w, _bl_h, _bl_src
         .export _blit_mask, _blit_copy, _blit_clear, _blit_plain
+        .export _blit_erase
         .export _cp_x, _cp_y, _cp_w, _cp_h, _clear_px
 
         .import _screen_rowlo, _screen_rowhi
@@ -97,6 +98,35 @@ bm_sta: sta     $FFFF,x
         inc     bl_row
         dec     bl_cnt
         bne     bm_row
+        rts
+
+; ---------------------------------------------------------------------------
+; blit_erase - вырез по форме спрайта: экран = экран И маска.
+;
+; Байт изображения из данных пропускается: нужен только вырез, без рисунка.
+; Тем и отличается от blit_mask, у которого следом идёт ORA.
+;
+; Зачем: падающий мешок на первом шаге стирает себя ПО МАСКЕ, а не
+; прямоугольником, иначе верх шахты выходит рубленым (см. src/bags.c).
+; ---------------------------------------------------------------------------
+_blit_erase:
+        BLIT_SETUP
+        ldy     #0                     ; индекс источника, растёт монотонно
+be_row:
+        SET_ROW_ADDR be_and, be_sta
+        ldx     #0
+be_col:
+        lda     (_bl_src),y            ; маска
+        iny
+        iny                            ; байт изображения пропускается
+be_and: and     $FFFF,x
+be_sta: sta     $FFFF,x
+        inx
+        cpx     _bl_w
+        bne     be_col
+        inc     bl_row
+        dec     bl_cnt
+        bne     be_row
         rts
 
 ; ---------------------------------------------------------------------------

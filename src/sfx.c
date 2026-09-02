@@ -12,9 +12,23 @@ void pokey_init(void);
 void pokey_silence(void);
 void sfx_apply(void);
 
+/* Состояние звука съедаемого золота, его ведёт кадровое прерывание */
+extern uint8_t  sfx_money;
+extern uint16_t sfx_m1;
+extern uint16_t sfx_m2;
+extern uint8_t  sfx_mvol;
+extern uint8_t  sfx_env_vol;
+
 uint8_t sfx_started;
 
 static uint8_t left;            /* тактов до гашения текущего эффекта */
+
+/* Период БК -> 16-битный делитель POKEY, формула из шапки sfx.h */
+static uint16_t bk_to_div(uint16_t bk_period)
+{
+    uint16_t n = (uint16_t)(((uint32_t)bk_period * 238u) >> 4);
+    return (n < 8u) ? 0u : (uint16_t)(n - 7u);
+}
 
 void sfx_init(void)
 {
@@ -25,23 +39,37 @@ void sfx_init(void)
 
 void sfx_play(uint16_t bk_period, uint8_t timbre, uint8_t vol, uint8_t ticks)
 {
-    uint16_t n;
-
     if (bk_period == 0)
         return;
 
-    /* N = 14.8615 * P - 7, посчитано сдвигом: (P * 238) >> 4 даёт 14.875 */
-    n = (uint16_t)(((uint32_t)bk_period * 238u) >> 4);
-    if (n < 8u)
-        n = 0;
-    else
-        n -= 7u;
-
-    sfx_f = n;
+    sfx_money = 0;              /* новый эффект вытесняет золото, как и всё */
+    sfx_f = bk_to_div(bk_period);
     sfx_c = (uint8_t)(timbre | (vol & 0x0Fu));
     sfx_apply();
 
     left = ticks;
+    ++sfx_started;
+}
+
+/*
+ * Звук съедаемого золота. В оригинале (snd_money в Work/TH.C) это не один
+ * тон, а тридцать коротких подряд: чётные одним делителем, нечётные другим,
+ * и после каждого первый период растёт на одну шестнадцатую, а второй на
+ * столько же убывает. Высоты идут навстречу, проходят друг сквозь друга и
+ * расходятся - отсюда дребезжание вместо "диня".
+ *
+ * Периоды 500 и 4000 у оригинала заданы в счётчиках PIT; в единицах БК, из
+ * которых считает наш движок, это 25 и 200. Сама последовательность идёт по
+ * кадрам, её ведёт кадровое прерывание (см. src/pokey.s).
+ */
+void sfx_gold(void)
+{
+    sfx_m1 = bk_to_div(25u);
+    sfx_m2 = bk_to_div(200u);
+    sfx_mvol = (uint8_t)(SFX_TONE | 12u);
+    sfx_env_vol = 0;            /* огибающая на это время молчит */
+    left = 0;                   /* и таймер гашения тоже: канал ведёт золото */
+    sfx_money = 30u;
     ++sfx_started;
 }
 
