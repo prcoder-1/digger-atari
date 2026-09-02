@@ -18,6 +18,14 @@
 #include "field.h"
 #include "bags.h"
 #include "bugs.h"
+
+/*
+ * Весь модуль нужен только демо-сборке. Без этой рамки его код - маршруты,
+ * ввод и телеметрия - линковался и в релиз: ld65 берёт объектный модуль
+ * целиком, а demo.o перечислен в списке всегда. Больше килобайта впустую.
+ */
+#ifdef DIGGER_DEMO
+
 #include "missile.h"
 
 /*
@@ -219,3 +227,5 @@ void demo_telemetry(void)
 
     draw_bits(DEMO_TELEMETRY_Y, buf, DEMO_TELEMETRY_BYTES);
 }
+
+#endif /* DIGGER_DEMO */
