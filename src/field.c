@@ -47,6 +47,18 @@ uint8_t y_rem_tbl[SCR_LINES];
 #define CORRIDOR_W      SPRITE_W_SUB    /* 4 подшага из 5 */
 #define CORRIDOR_H      SPRITE_H        /* 15 строк из 18 */
 
+/*
+ * Камень ниже обычного спрайта: 10 строк вместо 15, и рисуется он со
+ * смещением вниз, иначе висел бы у верхнего края клетки. Смещение взято у
+ * оригинала - put_coin(loopx*20 + X_OFFSET, loopy*18 + 3 + Y_OFFSET) в
+ * Work/TD.C; в порте на БК то же число названо COIN_Y_OFFSET.
+ *
+ * Три строки сверху и две снизу ставят камень по центру ПРОКОПАННОГО ХОДА
+ * (15 строк из 18), а не клетки: разделитель земли в счёт не идёт.
+ */
+#define COIN_Y_OFFSET   3u              /* смещение камня в клетке по Y */
+#define COIN_H          10u             /* строк в спрайте камня        */
+
 void field_build_tables(void)
 {
     uint8_t i, cell, rem;
@@ -297,7 +309,8 @@ void field_redraw(uint8_t screen)
         for (x = 0; x < W_MAX; ++x) {
             if (coins[y] & (uint16_t)(1u << x))
                 draw_at((uint8_t)(FIELD_X_OFFSET + x * POS_X_STEP),
-                        (uint8_t)(cy + 3u), 10, spr_cn_p0, spr_cn_p1);
+                        (uint8_t)(cy + COIN_Y_OFFSET), COIN_H,
+                        spr_cn_p0, spr_cn_p1);
         }
     }
 }
