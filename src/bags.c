@@ -9,7 +9,8 @@
 #include "bugs.h"
 #include "hud.h"
 
-extern const uint8_t spr_b4_p0[], spr_b4_p1[];   /* стоит / наклон влево  */
+extern const uint8_t spr_1_p0[],  spr_1_p1[];    /* стоит прямо           */
+extern const uint8_t spr_b4_p0[], spr_b4_p1[];   /* наклон влево          */
 extern const uint8_t spr_b5_p0[], spr_b5_p1[];   /* наклон вправо         */
 extern const uint8_t spr_b6_p0[], spr_b6_p1[];   /* падает                */
 extern const uint8_t spr_b7_p0[], spr_b7_p1[];   /* разбивается, кадр 1   */
@@ -25,26 +26,71 @@ bag_t bags[MAX_BAGS];
 #define GOLD_SCORE    0x0500u                   /* 500 очков за золото */
 #define BAG_BUG_SCORE 0x0250u                   /* 250 очков за придавленного врага */
 
-static const uint8_t *const bag_spr[6][2] = {
-    { spr_b4_p0, spr_b4_p1 },   /* BAG_NONE не рисуется, место занято  */
-    { spr_b4_p0, spr_b4_p1 },   /* стоит      */
-    { spr_b5_p0, spr_b5_p1 },   /* качается   */
-    { spr_b6_p0, spr_b6_p1 },   /* падает     */
-    { spr_b7_p0, spr_b7_p1 },   /* разбивается */
-    { spr_b9_p0, spr_b9_p1 },   /* золото     */
+/*
+ * Спрайты подобраны ПО КАДРУ АНИМАЦИИ, а не по состоянию: и у раскачки, и у
+ * разбивания кадров несколько. Раньше таблица шла по состоянию, и раскачка
+ * навсегда застывала в одном наклоне.
+ *
+ * Соответствие оригиналу взято из draw_bag() в Source/IMAGE.C: BAG_0 - это
+ * спрайт "1" (мешок прямо), BAG_4 и BAG_5 - наклоны, BAG_6 - падение,
+ * BAG_7..BAG_9 - разбивание и золото.
+ */
+#define BAG_F_UPRIGHT   0u
+#define BAG_F_LEFT      1u
+#define BAG_F_RIGHT     2u
+#define BAG_F_FALL      3u
+#define BAG_F_BREAK1    4u
+#define BAG_F_BREAK2    5u
+#define BAG_F_GOLD      6u
+
+static const uint8_t *const bag_spr[7][2] = {
+    { spr_1_p0,  spr_1_p1  },   /* прямо           */
+    { spr_b4_p0, spr_b4_p1 },   /* наклон влево    */
+    { spr_b5_p0, spr_b5_p1 },   /* наклон вправо   */
+    { spr_b6_p0, spr_b6_p1 },   /* падает          */
+    { spr_b7_p0, spr_b7_p1 },   /* разбивается, 1  */
+    { spr_b8_p0, spr_b8_p1 },   /* разбивается, 2  */
+    { spr_b9_p0, spr_b9_p1 },   /* золото          */
 };
+
+/*
+ * Раскачка: четыре кадра по кругу - влево, прямо, вправо, прямо. Кадр держится
+ * два такта, поэтому индекс берётся как (count % 8) / 2. Ровно так это в
+ * оригинале (Work/TB.C): там рисуют по остатку от восьми на значениях 0, 2, 4
+ * и 6, а на нечётных не перерисовывают вовсе.
+ *
+ * Счётчик УБЫВАЕТ, как и в оригинале, поэтому и порядок кадров тот же.
+ */
+static const uint8_t bag_wobble[4] = {
+    BAG_F_LEFT, BAG_F_UPRIGHT, BAG_F_RIGHT, BAG_F_UPRIGHT
+};
+
+static uint8_t bag_frame(const bag_t *b)
+{
+    switch (b->state) {
+    case BAG_LOOSE:     return bag_wobble[(b->count & 7u) >> 1];
+    case BAG_FALLING:   return BAG_F_FALL;
+    /* Два кадра разбивания вместо одного: в оригинале за b7 идёт b8, и
+     * только потом золото. Счётчик идёт 2, 1 - по кадру на такт. */
+    case BAG_BREAKING:  return (b->count > 1u) ? BAG_F_BREAK1 : BAG_F_BREAK2;
+    case BAG_GOLD:      return BAG_F_GOLD;
+    default:            return BAG_F_UPRIGHT;
+    }
+}
 
 static void bag_draw(const bag_t *b)
 {
+    uint8_t f = bag_frame(b);
+
     bl_x = (uint8_t)(b->x >> 1);
     bl_y = b->y;
     bl_h = SPRITE_H;
     if (b->x & 1u) {
         bl_w = 3;
-        bl_src = bag_spr[b->state][1];
+        bl_src = bag_spr[f][1];
     } else {
         bl_w = 2;
-        bl_src = bag_spr[b->state][0];
+        bl_src = bag_spr[f][0];
     }
     blit_mask();
 }
