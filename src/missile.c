@@ -137,34 +137,67 @@ void missile_clear(void)
     mis.reload = 0;
 }
 
+/*
+ * Точка вылета своя на каждое направление - снаряд выходит из клюва, а не
+ * из угла габарита. Смещения из оригинала (move_missile, Work/TC.C), точки
+ * переведены в подшаги по четыре:
+ *
+ *      вправо  (x+8, y+4)   ->  подшаг +2, строка +4
+ *      влево   (x,   y+4)   ->  подшаг  0, строка +4
+ *      вверх   (x+4, y)     ->  подшаг +1, строка  0
+ *      вниз    (x+4, y+8)   ->  подшаг +1, строка +8
+ *
+ * По горизонтали снаряд идёт серединой высоты Диггера, по вертикали -
+ * серединой ширины: он вдвое уже (2 подшага против 4). Раньше смещение было
+ * одно на все стороны, и при ходьбе вверх-вниз выстрел выходил от левого
+ * края фигуры, а не из клюва.
+ */
 void missile_fire(void)
 {
+    static const uint8_t fire_dx[4] = { 2u, 0u, 1u, 1u };  /* RIGHT LEFT DOWN UP */
+    static const uint8_t fire_dy[4] = { 4u, 4u, 8u, 0u };
+
     if (mis.state != MIS_NONE || mis.reload)
+        return;
+    if (man.dir > DIR_UP)
         return;
     ++mis_n_fired;
     sfx_play(12u, SFX_NOISE, 8u, 3u);   /* свист выстрела - шумовой тембр */
     mis.state = MIS_FLYING;
     mis.dir = man.dir;
-    mis.x = man.x;
-    /* Снаряд летит на середине высоты Диггера */
-    mis.y = (uint8_t)(man.y + (SPRITE_H - MIS_H) / 2u);
+    mis.x = (uint8_t)(man.x + fire_dx[man.dir]);
+    mis.y = (uint8_t)(man.y + fire_dy[man.dir]);
     mis.count = 0;
 }
 
 /*
- * Проходима ли клетка для снаряда. Правило то же, по которому ходят Ноббины
- * (bug_can_go в bugs.c): достаточно, чтобы клетка была прокопана насквозь
- * хотя бы по одной оси - на стыке коридоров ход идёт по другой оси, но
- * пройти через него можно.
+ * Пролетит ли снаряд через точку (подшаг, строка) при движении по dir.
+ *
+ * Двух правил мало по отдельности, поэтому проверяются оба:
+ *
+ *   - клетка прокопана НАСКВОЗЬ хотя бы по одной оси. Так ходят Ноббины
+ *     (bug_can_go в bugs.c): на стыке коридоров ход идёт по другой оси, но
+ *     пройти через него можно;
+ *   - либо снят конкретный УКУС по оси движения. Без этого выстрел вдоль
+ *     хода, который Диггер копает прямо сейчас, гас в первом же такте:
+ *     клетка перед ним прогрызена лишь частично, "насквозь" ещё не считается,
+ *     а лететь по ней уже можно - в оригинале там смотрят прямо на точки
+ *     экрана (ppoint в move_missile, Work/TC.C).
  */
-static uint8_t cell_open(uint8_t xl, uint8_t yl)
+static uint8_t mis_can_pass(uint8_t sub, uint8_t y, uint8_t dir)
 {
+    uint8_t xl = x_log_tbl[sub];
+    uint8_t yl = y_log_tbl[y];
     uint16_t bg;
 
     if (xl >= W_MAX || yl >= H_MAX)
         return 0;
     bg = background[yl][xl];
-    return (uint8_t)((bg & BG_HORIZ_ALL) == 0u || (bg & BG_VERT_ALL) == 0u);
+    if ((bg & BG_HORIZ_ALL) == 0u || (bg & BG_VERT_ALL) == 0u)
+        return 1;
+    if (dir == DIR_RIGHT || dir == DIR_LEFT)
+        return (uint8_t)((bg & (uint16_t)(1u << x_rem_tbl[sub])) == 0u);
+    return (uint8_t)((bg & (uint16_t)(0x40u << y_rem_tbl[y])) == 0u);
 }
 
 /*
@@ -242,7 +275,7 @@ void missile_tick(void)
         default:
             goto fizzle;
         }
-        blocked = (uint8_t)!cell_open(x_log_tbl[lx], y_log_tbl[ly]);
+        blocked = (uint8_t)!mis_can_pass(lx, ly, mis.dir);
 
         /*
          * В стену снаряд НЕ ВХОДИТ: упёршись, он остаётся на месте и там же

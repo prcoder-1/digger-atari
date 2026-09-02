@@ -68,6 +68,49 @@ static const uint8_t march_len[11] = {
 };
 
 #define MARCH_TICKS   48u       /* сумма длительностей выше */
+
+/*
+ * Фанфары в конце уровня: до-ми-соль, ре-фа-ля, ми-соль-си и до октавой выше.
+ * Ряд взят у оригинала (chk_end в Work/TH.C), там же последняя нота держится
+ * вдвое с лишним дольше остальных. Делители канала мелодии посчитаны из
+ * периодов PIT оригинала той же формулой, что и марш.
+ */
+static const uint8_t done_audf[10] = {
+    60u, 47u, 39u, 53u, 44u, 35u, 47u, 39u, 31u, 29u
+};
+static const uint8_t done_len[10] = {
+    2u, 2u, 2u, 2u, 2u, 2u, 2u, 2u, 2u, 5u
+};
+#define DONE_NOTES    10u
+
+/*
+ * Проигрыватель коротких мелодий по нотам: и траурный марш, и фанфары идут
+ * одинаково - нота держится свои такты, последний из них тишина. Разрыв
+ * обязателен: без него соседние ноты одной высоты сливаются в один затянутый
+ * тон, и начало марша пропадает на слух. В порте на БК ту же роль играет
+ * delay_ms(30) между нотами.
+ */
+static const uint8_t *tune_audf;
+static const uint8_t *tune_len;
+static uint8_t tune_notes;      /* сколько нот в мелодии   */
+static uint8_t tune_note;       /* какая следующая         */
+static uint8_t tune_left;       /* тактов до конца текущей */
+
+/* Один такт мелодии; возвращает 0, когда она отзвучала */
+static uint8_t tune_tick(void)
+{
+    if (tune_left == 0) {
+        if (tune_note >= tune_notes)
+            return 0;
+        music_note(tune_audf[tune_note]);
+        tune_left = tune_len[tune_note];
+        ++tune_note;
+    }
+    if (tune_left == 1u)
+        music_stop();
+    --tune_left;
+    return 1;
+}
 void __fastcall__ score_add(unsigned int bcd);
 #ifdef DEMO_PROFILE
 /* Профильная сборка: цвет фона переключается вокруг игрового такта, и его
@@ -109,6 +152,13 @@ extern uint8_t vbi_trig;
 #define ST_PLAY   0u
 #define ST_DYING  1u
 #define ST_OVER   2u
+/*
+ * Уровень пройден - играют фанфары, поле при этом замирает. Отдельное
+ * состояние нужно по той же причине, что и у сцены гибели: в оригинале
+ * snd_end() крутит свой цикл до конца звука, а у нас блокировать такт
+ * нельзя - вместе с ним встанут и звук, и музыка.
+ */
+#define ST_DONE   3u
 
 /* Столько тактов длится сцена гибели: хватает на одиннадцать нот марша
  * и на пять кадров вырастающего надгробия. */
@@ -232,7 +282,7 @@ int main(void)
     uint8_t dying = 0;
     uint8_t hit;
     uint8_t crushed;
-    uint8_t march_note = 0, march_left = 0, rip_shown = 0xFF;
+    uint8_t rip_shown = 0xFF;
     dir_t want, kd;
 
     /*
@@ -332,8 +382,6 @@ int main(void)
 
             if (!field_coins_left() ||
                 (bugs_left_to_spawn() == 0u && bugs_active == 0u)) {
-                /* Экран уровня: после восьмого крутятся пятый..восьмой */
-                uint8_t screen;
                 ++levels_done;
                 /* Дополнительная жизнь за каждые 20000 очков, как в оригинале */
                 if (score[0] >= 0x02u && game_lives < 6u) {
@@ -341,24 +389,15 @@ int main(void)
                     hud_lives(game_lives);
                     sfx_play(38u, SFX_TONE, 14u, 4u);   /* звук новой жизни */
                 }
-                sfx_play(114u, SFX_TONE, 12u, 4u);   /* конец уровня */
-                if (game_level < MAX_LEVEL)
-                    ++game_level;
-                screen = game_level;
-                if (screen > 8u)
-                    screen = (uint8_t)((game_level & 3u) + 5u);
-                --screen;
-
-                field_init(screen);
-                man_init();
-                /* Мешки перезаводятся вместе с полем: без этого на новый
-                 * уровень переезжало их состояние с прошлого - падающие
-                 * продолжали падать, а разбитые оставались золотом. */
-                bags_init(screen);
-                bugs_init(screen, game_level > 10u ? 10u : game_level);
-                bonus_state = BONUS_OFF;
-                missile_init(game_level > 10u ? 10u : game_level);
-                hud_score();
+                /* Дальше играют фанфары, а поле замирает: следующий уровень
+                 * заводится, когда они отзвучат. */
+                music_stop();
+                state = ST_DONE;
+                tune_audf = done_audf;
+                tune_len = done_len;
+                tune_notes = DONE_NOTES;
+                tune_note = 0;
+                tune_left = 0;
                 continue;
             }
 
@@ -429,8 +468,11 @@ int main(void)
                     pmg_hide();
                     pmg_bugs_hide_at(man.x, man.y);
                     dying = DYING_TICKS;
-                    march_note = 0;
-                    march_left = 0;
+                    tune_audf = march_audf;
+                    tune_len = march_len;
+                    tune_notes = 11u;
+                    tune_note = 0;
+                    tune_left = 0;
                     rip_shown = 0xFF;
                     /* Скрежет запускается ОДИН раз, дальше высота ползёт
                      * сама в кадровом прерывании: повторный запуск каждый
@@ -458,6 +500,34 @@ int main(void)
          * оставался бы висеть на канале до конца сцены. */
         sfx_tick();
 
+        if (state == ST_DONE) {
+            if (!tune_tick()) {
+                /* Экран уровня: после восьмого крутятся пятый..восьмой */
+                uint8_t screen;
+
+                music_stop();
+                if (game_level < MAX_LEVEL)
+                    ++game_level;
+                screen = game_level;
+                if (screen > 8u)
+                    screen = (uint8_t)((game_level & 3u) + 5u);
+                --screen;
+
+                field_init(screen);
+                man_init();
+                /* Мешки перезаводятся вместе с полем: без этого на новый
+                 * уровень переезжало их состояние с прошлого - падающие
+                 * продолжали падать, а разбитые оставались золотом. */
+                bags_init(screen);
+                bugs_init(screen, game_level > 10u ? 10u : game_level);
+                bonus_state = BONUS_OFF;
+                missile_init(game_level > 10u ? 10u : game_level);
+                hud_score();
+                music_select(0);        /* вернуть фоновую музыку */
+                state = ST_PLAY;
+            }
+        }
+
         if (state == ST_DYING) {
             /*
              * Сцена гибели построена как в порте на БК: сначала скрипучий
@@ -476,22 +546,8 @@ int main(void)
                 sfx_sweep = 0;          /* скрежет кончился */
             } else if (elapsed < DEATH_SWEEP + DEATH_PAUSE) {
                 /* Пауза перед надгробием - тишина, как в оригинале */
-            } else if (march_left == 0 && march_note < 11u) {
-                music_note(march_audf[march_note]);
-                march_left = march_len[march_note];
-                ++march_note;
-            }
-            if (march_left) {
-                /*
-                 * Последний такт ноты - тишина. Без этого разрыва четыре
-                 * идущие подряд ноты одной высоты (начало марша) сливались
-                 * в один затянутый тон, и начало марша пропадало на слух.
-                 * В БК-порте ту же роль играет delay_ms(30) между нотами,
-                 * а фоновый проигрыватель гасит последнюю восьмую ноты.
-                 */
-                if (march_left == 1u)
-                    music_stop();
-                --march_left;
+            } else {
+                tune_tick();    /* марш идёт тем же проигрывателем нот */
             }
 
             /* Надгробие растёт только после паузы, вместе с маршем */
