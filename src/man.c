@@ -18,8 +18,18 @@
 #include "bags.h"
 #include "sfx.h"
 #include "pmg.h"
+#include "missile.h"
 
-/* Спрайты Диггера: по три фазы на каждое из четырёх направлений */
+/*
+ * Спрайты Диггера: по ШЕСТЬ кадров на каждое из четырёх направлений. Первые
+ * три - с башенкой, вторые три (r4..r6 и такие же у остальных направлений) -
+ * без неё.
+ *
+ * Башенка есть, только когда выстрел готов: пока снаряд летит или идёт
+ * перезарядка, Диггер едет с приплюснутым верхом. Это единственный признак
+ * готовности оружия на экране, и он же есть в оригинале - в порте на БК то
+ * же самое называется cab и считается как !mis.flying && !mis.wait.
+ */
 extern const uint8_t spr_r0_p0[], spr_r0_p1[];
 extern const uint8_t spr_r1_p0[], spr_r1_p1[];
 extern const uint8_t spr_r2_p0[], spr_r2_p1[];
@@ -32,6 +42,18 @@ extern const uint8_t spr_u2_p0[], spr_u2_p1[];
 extern const uint8_t spr_d0_p0[], spr_d0_p1[];
 extern const uint8_t spr_d1_p0[], spr_d1_p1[];
 extern const uint8_t spr_d2_p0[], spr_d2_p1[];
+extern const uint8_t spr_r4_p0[], spr_r4_p1[];
+extern const uint8_t spr_r5_p0[], spr_r5_p1[];
+extern const uint8_t spr_r6_p0[], spr_r6_p1[];
+extern const uint8_t spr_l4_p0[], spr_l4_p1[];
+extern const uint8_t spr_l5_p0[], spr_l5_p1[];
+extern const uint8_t spr_l6_p0[], spr_l6_p1[];
+extern const uint8_t spr_u4_p0[], spr_u4_p1[];
+extern const uint8_t spr_u5_p0[], spr_u5_p1[];
+extern const uint8_t spr_u6_p0[], spr_u6_p1[];
+extern const uint8_t spr_d4_p0[], spr_d4_p1[];
+extern const uint8_t spr_d5_p0[], spr_d5_p1[];
+extern const uint8_t spr_d6_p0[], spr_d6_p1[];
 
 /* Заливка для аппаратных спрайтов: два плана на кадр (корпус, клюв). Колёса
  * плана лишились - два игрока ушли врагам, см. src/pmg.s. Предсдвинутых фаз
@@ -67,19 +89,34 @@ static uint8_t coin_timer;
 #define COIN_SCORE      0x0025u /* 25 очков, сразу в BCD           */
 #define COIN_RUN_BONUS  0x0250u /* 250 очков за восемь подряд      */
 
-/* [направление][фаза][фаза сдвига] */
-static const uint8_t *const man_spr[4][3][2] = {
+/* [направление][кадр 0..5: три с башенкой, три без][фаза сдвига] */
+static const uint8_t *const man_spr[4][6][2] = {
     { { spr_r0_p0, spr_r0_p1 }, { spr_r1_p0, spr_r1_p1 },
-      { spr_r2_p0, spr_r2_p1 } },
+      { spr_r2_p0, spr_r2_p1 },
+      { spr_r4_p0, spr_r4_p1 }, { spr_r5_p0, spr_r5_p1 },
+      { spr_r6_p0, spr_r6_p1 } },
     { { spr_l0_p0, spr_l0_p1 }, { spr_l1_p0, spr_l1_p1 },
-      { spr_l2_p0, spr_l2_p1 } },
+      { spr_l2_p0, spr_l2_p1 },
+      { spr_l4_p0, spr_l4_p1 }, { spr_l5_p0, spr_l5_p1 },
+      { spr_l6_p0, spr_l6_p1 } },
     { { spr_d0_p0, spr_d0_p1 }, { spr_d1_p0, spr_d1_p1 },
-      { spr_d2_p0, spr_d2_p1 } },
+      { spr_d2_p0, spr_d2_p1 },
+      { spr_d4_p0, spr_d4_p1 }, { spr_d5_p0, spr_d5_p1 },
+      { spr_d6_p0, spr_d6_p1 } },
     { { spr_u0_p0, spr_u0_p1 }, { spr_u1_p0, spr_u1_p1 },
-      { spr_u2_p0, spr_u2_p1 } },
+      { spr_u2_p0, spr_u2_p1 },
+      { spr_u4_p0, spr_u4_p1 }, { spr_u5_p0, spr_u5_p1 },
+      { spr_u6_p0, spr_u6_p1 } },
 };
 
-/* [направление][кадр][план] - порядок направлений тот же, что выше */
+/*
+ * Заливка аппаратных спрайтов - только для трёх кадров: у кадров без башенки
+ * она та же самая. Проверено по данным оригинала: краски корпуса и клюва у
+ * пары r0/r4 совпадают точка в точку, отличается только башенка, а она
+ * жёлтая - того же цвета, что колёса, и своего плана не имеет.
+ *
+ * [направление][кадр][план] - порядок направлений тот же, что выше
+ */
 static const uint8_t *const man_pm[4][3][2] = {
     { { pm_r0_0, pm_r0_1 }, { pm_r1_0, pm_r1_1 },
       { pm_r2_0, pm_r2_1 } },
@@ -146,6 +183,10 @@ static void take_coin(void)
  */
 static void man_draw(void)
 {
+    /* Башенка есть, только пока выстрел готов; иначе берётся вторая тройка
+     * кадров - та же поза, но с приплюснутым верхом. */
+    uint8_t f = (uint8_t)(man.frame + (missile_ready() ? 0u : 3u));
+
     pmg_hpos = PMG_HPOS(man.x);
     pmg_y = man.y;
     pmg_s0 = man_pm[man.dir][man.frame][0];
@@ -158,10 +199,10 @@ static void man_draw(void)
      * предсдвинутая на полбайта фаза, которая на байт шире. */
     if (man.x & 1u) {
         bl_w = 3;
-        bl_src = man_spr[man.dir][man.frame][1];
+        bl_src = man_spr[man.dir][f][1];
     } else {
         bl_w = 2;
-        bl_src = man_spr[man.dir][man.frame][0];
+        bl_src = man_spr[man.dir][f][0];
     }
     blit_mask();
 }

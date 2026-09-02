@@ -90,6 +90,11 @@ uint8_t missile_state(void)
     return mis.state;
 }
 
+uint8_t missile_ready(void)
+{
+    return (uint8_t)(mis.state == MIS_NONE && mis.reload == 0u);
+}
+
 static void mis_draw(const uint8_t *const spr[3][2], uint8_t phase)
 {
     bl_x = (uint8_t)(mis.x >> 1);

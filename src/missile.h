@@ -23,4 +23,8 @@ void missile_clear(void);
 
 uint8_t missile_state(void);
 
+/* Готов ли выстрел: снаряда нет на поле и перезарядка кончилась. По этому же
+ * признаку у Диггера рисуется башенка - см. src/man.c. */
+uint8_t missile_ready(void);
+
 #endif /* MISSILE_H */
