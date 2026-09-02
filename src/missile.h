@@ -18,6 +18,9 @@
 void missile_init(uint8_t difficulty);
 void missile_fire(void);        /* выстрел, если снаряд готов */
 void missile_tick(void);
+/* Убрать снаряд с экрана при гибели Диггера */
+void missile_clear(void);
+
 uint8_t missile_state(void);
 
 #endif /* MISSILE_H */

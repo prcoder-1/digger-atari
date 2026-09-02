@@ -45,6 +45,12 @@ typedef struct {
 
 extern bag_t bags[MAX_BAGS];
 
+/* Конец жизни: убрать мешки, пришедшие в движение */
+void bags_respawn(void);
+
+/* Вернуть на экран уцелевшие мешки после уборки поля */
+void bags_redraw_all(void);
+
 /* Придавил ли падающий мешок Диггера */
 uint8_t bags_hit_man(void);
 

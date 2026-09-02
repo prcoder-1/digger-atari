@@ -117,6 +117,20 @@ static void mis_erase(void)
     clear_px();
 }
 
+/*
+ * Убрать снаряд с экрана. При гибели Диггера снаряд может быть в полёте или
+ * взрываться: без этого его спрайт остался бы висеть на поле, а стирать его
+ * стало бы уже некому. В порте на БК то же делается в начале man_rip.
+ */
+void missile_clear(void)
+{
+    if (mis.state != MIS_NONE) {
+        mis_erase();
+        mis.state = MIS_NONE;
+    }
+    mis.reload = 0;
+}
+
 void missile_fire(void)
 {
     if (mis.state != MIS_NONE || mis.reload)
