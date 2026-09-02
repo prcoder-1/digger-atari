@@ -39,6 +39,21 @@ extern uint8_t pmg_by;          /* враг: строка растра          
 extern const uint8_t *pmg_bs;   /* враг: данные плана             */
 extern uint8_t pmg_bpl;         /* враг: область игрока, 6 или 7  */
 
+/*
+ * Все они лежат в нулевой странице (сегмент ZEROPAGE в src/pmg.s), и об этом
+ * надо сказать компилятору: без zpsym он обращается к ним как к обычным
+ * ячейкам, а линковщик ругается несовпадением разрядности адреса. Заодно
+ * пропадает лишний байт и такт на каждом обращении - как у блиттера,
+ * см. src/blit.h.
+ */
+#pragma zpsym ("pmg_hpos")
+#pragma zpsym ("pmg_y")
+#pragma zpsym ("pmg_s0")
+#pragma zpsym ("pmg_s1")
+#pragma zpsym ("pmg_by")
+#pragma zpsym ("pmg_bs")
+#pragma zpsym ("pmg_bpl")
+
 void pmg_init(void);
 void pmg_show(void);
 void pmg_hide(void);
