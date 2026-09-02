@@ -3,6 +3,11 @@
  *
  * Панель занимает строки 0..27, поле начинается со строки 28. Символ
  * знакогенератора ПЗУ - 8x8 пикселей, то есть 2 байта экрана и 8 строк.
+ *
+ * Рисуется панель в тот же кадровый буфер, что и поле, но красками своей пары
+ * COL_HUD_*: на границе строк 15/16 стоит прерывание по строке (src/dli.s).
+ * Красная полоса короче отведённых панели строк - содержимое кончается на
+ * строке 13, строки 16..27 идут уже цветами поля и читаются как отступ.
  */
 #include "hud.h"
 #include "hw.h"
@@ -18,6 +23,10 @@ extern uint8_t score[3];
 #define LIVES_X     28u
 #define LIVES_Y     2u
 #define MAX_LIVES   6u
+/* Значок жизни НИЖЕ обычного спрайта: 16x12, а не 16x15. Раньше выводились
+ * все 15 строк, и три лишние блиттер дочитывал из следующего спрайта - под
+ * значками висел мусор. */
+#define LIFE_H      12u
 
 static uint8_t lives_shown = 0xFF;
 
@@ -48,14 +57,14 @@ void hud_lives(uint8_t n)
     cp_x = (uint8_t)(LIVES_X * SUBSTEP_PER_BYTE);
     cp_y = LIVES_Y;
     cp_w = (uint8_t)(MAX_LIVES * 2u * SUBSTEP_PER_BYTE);
-    cp_h = 15u;
+    cp_h = LIFE_H;
     clear_px();
 
     for (i = 0; i < n; ++i) {
         bl_x = (uint8_t)(LIVES_X + i * 2u);
         bl_y = LIVES_Y;
         bl_w = 2u;
-        bl_h = 15u;
+        bl_h = LIFE_H;
         bl_src = spr_s0_p0;
         blit_mask();
     }

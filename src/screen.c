@@ -5,6 +5,7 @@
  */
 #include <string.h>
 #include "screen.h"
+#include "dli.h"
 
 uint8_t screen_rowlo[SCR_LINES];
 uint8_t screen_rowhi[SCR_LINES];
@@ -91,8 +92,20 @@ static void build_dlist(void)
     *d++ = DL_BLANK8;
     *d++ = DL_BLANK8;
 
-    d = emit_lms(d, (uint16_t)(screen_buf + RUN0_OFS));
-    d = emit_lines(d, SCR_RUN0_LINES - 1);
+    /*
+     * Бит DLI стоит НЕ на последней строке панели, а на DLI_LEAD строк выше.
+     * Строка режима F - одна строка растра, а ANTIC успевает украсть из неё
+     * больше трети тактов на выборку картинки, поэтому отклик на прерывание
+     * вместе с диспетчером ПЗУ перехлёстывает за конец своей строки, и WSYNC
+     * внутри обработчика встаёт уже на следующую. Измерено: с битом на строке
+     * перед границей краски поля ложились строкой ниже, то есть верхняя строка
+     * поля оставалась в цветах панели.
+     */
+    d = emit_lms(d, (uint16_t)(screen_buf + RUN0_OFS));  /* строка 0       */
+    d = emit_lines(d, HUD_BAND_LINES - DLI_LEAD - 1);    /* строки 1..13   */
+    *d++ = DL_MODE_F | DL_DLI;                           /* строка 14      */
+    d = emit_lines(d, SCR_RUN0_LINES - HUD_BAND_LINES + DLI_LEAD - 1);
+                                                         /* строки 15..101 */
 
     d = emit_lms(d, (uint16_t)(screen_buf + RUN1_OFS));
     d = emit_lines(d, SCR_RUN1_LINES - 1);
@@ -124,10 +137,19 @@ void screen_init(void)
     build_dlist();
     screen_clear(0);
 
+    /*
+     * В тенях ОС - краски ПАНЕЛИ: вторая стадия кадрового прерывания
+     * переписывает их в железо, то есть сама возвращает панельную палитру к
+     * строке 0. Краски поля кладёт DLI на границе строк 15/16.
+     */
     OS_COLOR4 = COL_BACK;
     OS_COLOR0 = COL_PF0;
-    OS_COLOR1 = COL_PF1;
-    OS_COLOR2 = COL_PF2;
+    OS_COLOR1 = COL_HUD_PF1;
+    OS_COLOR2 = COL_HUD_PF2;
+
+    dli_pf1 = COL_FIELD_PF1;
+    dli_pf2 = COL_FIELD_PF2;
+    dli_install();
 
     OS_SDLSTL = (uint16_t)dlist;
     OS_SDMCTL = SDMCTL_GAME;
@@ -138,6 +160,7 @@ void screen_done(void)
 {
     OS_SDMCTL = 0;
     wait_frame();
+    dli_remove();
     OS_SDLSTL = saved_sdlstl;
     OS_SDMCTL = saved_sdmctl;
     wait_frame();
