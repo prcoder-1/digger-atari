@@ -67,6 +67,9 @@ void field_redraw(uint8_t screen);
 /* Закругляет торец хода в направлении dir; см. field.c */
 void field_gnaw(uint8_t dir, uint8_t x_sub, uint8_t y);
 
+/* Скруглённая шахта под падающим мешком: first - первый шаг падения */
+void field_gnaw_bag(uint8_t x_sub, uint8_t y, uint8_t first);
+
 void clear_px_at(uint8_t x_px, uint8_t y, uint8_t w_px, uint8_t h);
 
 /* Забирает камень из клетки, если он там есть. Возвращает 1, если забрал. */

@@ -24,6 +24,10 @@ extern const uint8_t spr_rt_p0[], spr_rt_p1[];
 extern const uint8_t spr_lt_p0[], spr_lt_p1[];
 extern const uint8_t spr_up_p0[], spr_up_p1[];
 extern const uint8_t spr_dn_p0[], spr_dn_p1[];
+/* Те же стиратели, но для шахты под падающим мешком: bf - первый кусок,
+ * bd - каждый следующий. Они шире обычных и своей формы. */
+extern const uint8_t spr_bd_p0[], spr_bd_p1[];
+extern const uint8_t spr_bf_p0[], spr_bf_p1[];
 
 #define LEVEL_BYTES     80u             /* (15/2 + 1) * 10 */
 #define ROW_BYTES       8u              /* байт на строку карты */
@@ -137,6 +141,42 @@ static void draw_earth(uint8_t screen)
 }
 
 /*
+ * Общая часть всех стирателей: вывести маску по подшагу sub, строке top,
+ * высотой h и шириной bytes байт. Строки вне поля отбрасываются, а источник
+ * сдвигается на столько же строк вперёд - иначе стиратель вверх задел бы
+ * полосу счёта, а вниз вышел бы за последнюю строку буфера.
+ */
+static void gnaw_put(uint8_t sub, int16_t top, uint8_t h, uint8_t bytes,
+                     const uint8_t *p0, const uint8_t *p1)
+{
+    uint8_t w = bytes;
+    uint8_t skip = 0;
+
+    if (sub & 1u)                       /* сдвинутая фаза на байт шире */
+        ++w;
+
+    if (top < (int16_t)FIELD_Y_OFFSET) {
+        skip = (uint8_t)((int16_t)FIELD_Y_OFFSET - top);
+        if (skip >= h)
+            return;
+        top = (int16_t)FIELD_Y_OFFSET;
+        h = (uint8_t)(h - skip);
+    }
+    if (top >= (int16_t)SCR_LINES)
+        return;
+    if (top + h > (int16_t)SCR_LINES)
+        h = (uint8_t)((int16_t)SCR_LINES - top);
+
+    bl_x = (uint8_t)(sub >> 1);
+    bl_y = (uint8_t)top;
+    bl_w = w;
+    bl_h = h;
+    /* строка данных - w пар (маска, изображение) */
+    bl_src = ((sub & 1u) ? p1 : p0) + (unsigned)skip * w * 2u;
+    blit_mask();
+}
+
+/*
  * field_gnaw - закруглить край прокопанного хода в направлении движения.
  *
  * Без этого ход остаётся строгим прямоугольником: clear_px гасит прямые
@@ -148,55 +188,48 @@ static void draw_earth(uint8_t screen)
  *      влево   (x-8,  y-1)   ->  подшаг -2, строка -1
  *      вверх   (x-4,  y-6)   ->  подшаг -1, строка -6
  *      вниз    (x-4,  y+15)  ->  подшаг -1, строка +15
- *
- * Стиратель вверх и вниз выходит за поле: сверху он задел бы полосу счёта,
- * снизу - вышел бы за последнюю строку буфера. Поэтому строки вне поля
- * отбрасываются, а источник сдвигается на столько же строк вперёд.
  */
 void field_gnaw(uint8_t dir, uint8_t x_sub, uint8_t y)
 {
     static const int8_t dx[4] = {  4, -2, -1, -1 };   /* RIGHT, LEFT, DOWN, UP */
     static const int8_t dy[4] = { -1, -1, 15, -6 };
     static const uint8_t hgt[4] = { 18u, 18u, 6u, 6u };
+    static const uint8_t wid[4] = { 1u, 1u, 3u, 3u };
     static const uint8_t *const spr[4][2] = {
         { spr_rt_p0, spr_rt_p1 }, { spr_lt_p0, spr_lt_p1 },
         { spr_dn_p0, spr_dn_p1 }, { spr_up_p0, spr_up_p1 },
     };
 
-    uint8_t sub, w, h, skip;
-    int16_t top;
-
     if (dir > DIR_UP)
         return;
 
-    sub = (uint8_t)(x_sub + dx[dir]);
-    top = (int16_t)y + dy[dir];
-    h = hgt[dir];
+    gnaw_put((uint8_t)(x_sub + dx[dir]), (int16_t)y + dy[dir],
+             hgt[dir], wid[dir], spr[dir][0], spr[dir][1]);
+}
 
-    /* строки выше поля отбрасываем вместе с их данными */
-    skip = 0;
-    if (top < (int16_t)FIELD_Y_OFFSET) {
-        skip = (uint8_t)((int16_t)FIELD_Y_OFFSET - top);
-        if (skip >= h)
-            return;
-        top = (int16_t)FIELD_Y_OFFSET;
-        h = (uint8_t)(h - skip);
+/*
+ * Шахта под падающим мешком выгрызается СВОИМИ стирателями, а не остаётся
+ * прямоугольником от габарита мешка. В оригинале это делает TB.C на каждом
+ * шаге падения:
+ *
+ *      первый шаг   era_b_first(x, y)  -> спрайт bf в (x-4, y+17), 6 строк
+ *                   era_up(x, y+21)    -> спрайт up в (x-4, y+15), 6 строк
+ *      дальше       era_b_down(x, y)   -> спрайт bd в (x-4, y+15), 8 строк
+ *
+ * Смещение -4 точки - это подшаг влево; стиратели шире обычного хода (24
+ * точки против 16), поэтому у шахты и получаются скруглённые бока, а не
+ * рубленые стенки.
+ */
+void field_gnaw_bag(uint8_t x_sub, uint8_t y, uint8_t first)
+{
+    uint8_t sub = (uint8_t)(x_sub - 1u);
+
+    if (first) {
+        gnaw_put(sub, (int16_t)y + 17, 6u, 3u, spr_bf_p0, spr_bf_p1);
+        gnaw_put(sub, (int16_t)y + 15, 6u, 3u, spr_up_p0, spr_up_p1);
+    } else {
+        gnaw_put(sub, (int16_t)y + 15, 8u, 3u, spr_bd_p0, spr_bd_p1);
     }
-    if (top + h > (int16_t)SCR_LINES)
-        h = (uint8_t)((int16_t)SCR_LINES - top);
-
-    /* ширина: узкие торцы - байт, широкие - три; сдвинутая фаза на байт шире */
-    w = (dir == DIR_RIGHT || dir == DIR_LEFT) ? 1u : 3u;
-    if (sub & 1u)
-        ++w;
-
-    bl_x = (uint8_t)(sub >> 1);
-    bl_y = (uint8_t)top;
-    bl_w = w;
-    bl_h = h;
-    /* строка данных - w пар (маска, изображение) */
-    bl_src = spr[dir][sub & 1u] + (unsigned)skip * w * 2u;
-    blit_mask();
 }
 
 /* Выводит спрайт по координате в подшагах: фаза выбирается по младшему биту */
