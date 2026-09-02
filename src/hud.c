@@ -14,15 +14,29 @@
 #include "text.h"
 #include "blit.h"
 
-extern const uint8_t spr_s0_p0[];       /* значок жизни */
+extern const uint8_t spr_s0_p0[], spr_s0_p1[];  /* значок жизни, две фазы */
 
 extern uint8_t score[3];
 
 #define SCORE_X     1u                  /* байт экрана */
 #define SCORE_Y     2u
-#define LIVES_X     28u
 #define LIVES_Y     2u
 #define MAX_LIVES   6u
+
+/*
+ * Значки жизней стоят через 20 точек - как в оригинале (print_lives в
+ * Work/TF.C ставит их по 60 + loop*20). Спрайт шириной 16 точек, значит между
+ * значками остаётся зазор в 4 точки. Вплотную, через 16 точек, они сливались
+ * в сплошную ленту.
+ *
+ * Двадцать точек - это пять подшагов, то есть НЕ целое число байт, поэтому у
+ * половины значков берётся сдвинутая фаза спрайта, как у фигур на поле.
+ *
+ * Шесть значков по 20 точек занимают 120 точек, поэтому ряд начинается с
+ * подшага 50 (точка 200) - иначе последний ушёл бы за правый край.
+ */
+#define LIFE_STEP_SUB   POS_X_STEP      /* 5 подшагов = 20 точек */
+#define LIVES_X_SUB     50u
 /* Значок жизни НИЖЕ обычного спрайта: 16x12, а не 16x15. Раньше выводились
  * все 15 строк, и три лишние блиттер дочитывал из следующего спрайта - под
  * значками висел мусор. */
@@ -54,18 +68,25 @@ void hud_lives(uint8_t n)
 
     /* Полоса значков перерисовывается целиком: она короткая, а следить за
      * тем, какой именно значок пропал, дороже, чем стереть и нарисовать. */
-    cp_x = (uint8_t)(LIVES_X * SUBSTEP_PER_BYTE);
+    cp_x = LIVES_X_SUB;
     cp_y = LIVES_Y;
-    cp_w = (uint8_t)(MAX_LIVES * 2u * SUBSTEP_PER_BYTE);
+    cp_w = (uint8_t)(MAX_LIVES * LIFE_STEP_SUB);
     cp_h = LIFE_H;
     clear_px();
 
     for (i = 0; i < n; ++i) {
-        bl_x = (uint8_t)(LIVES_X + i * 2u);
+        uint8_t xs = (uint8_t)(LIVES_X_SUB + i * LIFE_STEP_SUB);
+
+        bl_x = (uint8_t)(xs >> 1);
         bl_y = LIVES_Y;
-        bl_w = 2u;
         bl_h = LIFE_H;
-        bl_src = spr_s0_p0;
+        if (xs & 1u) {
+            bl_w = 3u;
+            bl_src = spr_s0_p1;
+        } else {
+            bl_w = 2u;
+            bl_src = spr_s0_p0;
+        }
         blit_mask();
     }
 }
