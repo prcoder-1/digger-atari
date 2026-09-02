@@ -32,6 +32,7 @@ void __fastcall__ score_add(unsigned int bcd);
  */
 #define MIS_H         7u        /* строк растра            */
 #define MIS_W_BYTES   1u        /* байт в строке, фаза 0   */
+#define MIS_W_SUB     2u        /* подшага в ширину (8 точек) */
 #define MIS_STEP_X    2u        /* подшага за такт - вдвое быстрее ходьбы */
 #define MIS_STEP_Y    (2u * SUBSTEP_Y_LINES)
 #define EXPLODE_TICKS 3u
@@ -145,29 +146,47 @@ void missile_fire(void)
     mis.count = 0;
 }
 
-/* Не упёрся ли снаряд в целую землю */
-static uint8_t mis_blocked(void)
+/*
+ * Проходима ли клетка для снаряда. Правило то же, по которому ходят Ноббины
+ * (bug_can_go в bugs.c): достаточно, чтобы клетка была прокопана насквозь
+ * хотя бы по одной оси - на стыке коридоров ход идёт по другой оси, но
+ * пройти через него можно.
+ */
+static uint8_t cell_open(uint8_t xl, uint8_t yl)
 {
-    uint8_t xl = x_log_tbl[mis.x];
-    uint8_t yl = y_log_tbl[mis.y];
-    uint16_t bg = background[yl][xl];
+    uint16_t bg;
 
-    return (uint8_t)((bg & BG_HORIZ_ALL) != 0u && (bg & BG_VERT_ALL) != 0u);
+    if (xl >= W_MAX || yl >= H_MAX)
+        return 0;
+    bg = background[yl][xl];
+    return (uint8_t)((bg & BG_HORIZ_ALL) == 0u || (bg & BG_VERT_ALL) == 0u);
 }
 
-/* Попал ли снаряд во врага; при попадании враг снимается с поля */
+/*
+ * Попал ли снаряд во врага; при попадании враг снимается с поля.
+ *
+ * Габарит считается честным пересечением прямоугольников: враг 4 подшага на
+ * 15 строк, снаряд 2 подшага на 7. Прежние границы были взяты на глаз и
+ * заодно засчитывали попадание во врага, стоящего на десяток строк НИЖЕ
+ * снаряда, где никакого пересечения нет.
+ *
+ * Убирает врага bugs_remove: она не только меняет состояние, но и СТИРАЕТ
+ * его с поля. Раньше здесь состояние правилось руками, и убитый враг
+ * оставался нарисованным до конца уровня - со стороны это выглядело так,
+ * будто выстрелы врагов не убивают вовсе.
+ */
 static uint8_t mis_hit_bug(void)
 {
     uint8_t i;
     for (i = 0; i < MAX_BUGS; ++i) {
-        bug_t *b = &bugs[i];
+        const bug_t *b = &bugs[i];
         if (b->state != BUG_ALIVE)
             continue;
-        if ((uint8_t)(b->x - mis.x + 3u) < 7u &&
-            (uint16_t)(b->y - mis.y + 10u) < 21u) {
-            b->state = BUG_NONE;
-            if (bugs_active)
-                --bugs_active;
+        if ((uint8_t)(b->x - mis.x + SPRITE_W_SUB - 1u)
+                < (uint8_t)(SPRITE_W_SUB + MIS_W_SUB - 1u) &&
+            (uint8_t)(b->y - mis.y + SPRITE_H - 1u)
+                < (uint8_t)(SPRITE_H + MIS_H - 1u)) {
+            bugs_remove(i);
             score_add(BUG_SCORE);
             sfx_play(75u, SFX_ROUGH, 12u, 3u);  /* взрыв */
             hud_score();
@@ -186,36 +205,66 @@ void missile_tick(void)
     case MIS_NONE:
         return;
 
-    case MIS_FLYING:
-        mis_erase();
+    case MIS_FLYING: {
+        uint8_t nx = mis.x, lx = mis.x;
+        uint8_t ny = mis.y, ly = mis.y;
+        uint8_t blocked;
+
+        /*
+         * Ведущая кромка (lx, ly) - та точка снаряда, которая первой войдёт
+         * в стену: при движении вправо это его правый край, вниз - нижний,
+         * а влево и вверх кромка совпадает с самим положением.
+         */
         switch (mis.dir) {
         case DIR_RIGHT:
             if (mis.x + MIS_STEP_X > MAN_X_MAX) { ++mis_n_offscreen; goto fizzle; }
-            mis.x = (uint8_t)(mis.x + MIS_STEP_X);
+            nx = (uint8_t)(mis.x + MIS_STEP_X);
+            lx = (uint8_t)(nx + MIS_W_SUB - 1u);
             break;
         case DIR_LEFT:
             if (mis.x < MAN_X_MIN + MIS_STEP_X) { ++mis_n_offscreen; goto fizzle; }
-            mis.x = (uint8_t)(mis.x - MIS_STEP_X);
+            nx = lx = (uint8_t)(mis.x - MIS_STEP_X);
             break;
         case DIR_DOWN:
             if (mis.y + MIS_STEP_Y > MAN_Y_MAX) { ++mis_n_offscreen; goto fizzle; }
-            mis.y = (uint8_t)(mis.y + MIS_STEP_Y);
+            ny = (uint8_t)(mis.y + MIS_STEP_Y);
+            ly = (uint8_t)(ny + MIS_H - 1u);
             break;
         case DIR_UP:
             if (mis.y < MAN_Y_MIN + MIS_STEP_Y) { ++mis_n_offscreen; goto fizzle; }
-            mis.y = (uint8_t)(mis.y - MIS_STEP_Y);
+            ny = ly = (uint8_t)(mis.y - MIS_STEP_Y);
             break;
         default:
             goto fizzle;
         }
+        blocked = (uint8_t)!cell_open(x_log_tbl[lx], y_log_tbl[ly]);
 
+        /*
+         * В стену снаряд НЕ ВХОДИТ: упёршись, он остаётся на месте и там же
+         * взрывается. В оригинале то же самое сделано наоборот - шаг делается,
+         * а потом снаряд возвращают назад (mis_x -= 8 в move_missile,
+         * Work/TC.C). Результат один, а лишнего стирания земли нет: mis_erase
+         * гасит прямоугольник, и шагнув в целый грунт снаряд прогрызал бы в
+         * нём дырку.
+         */
+        mis_erase();
+        if (!blocked) {
+            mis.x = nx;
+            mis.y = ny;
+        }
+
+        /*
+         * Попадание проверяется ДО стены: враг может стоять в последней
+         * клетке тоннеля, и тогда стена не должна его спасать. То же
+         * замечание есть в порте на БК.
+         */
         if (mis_hit_bug()) {
             mis.state = MIS_EXPLODING;
             mis.count = EXPLODE_TICKS;
             mis_draw(boom_spr, 0);
             return;
         }
-        if (mis_blocked()) {
+        if (blocked) {
             ++mis_n_blocked;
             goto fizzle;
         }
@@ -223,6 +272,7 @@ void missile_tick(void)
         ++mis.count;
         mis_draw(fly_spr, (uint8_t)(mis.count % 3u));
         return;
+    }
 
     case MIS_EXPLODING:
         mis_draw(boom_spr, (uint8_t)(mis.count % 3u));
