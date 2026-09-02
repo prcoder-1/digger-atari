@@ -25,8 +25,7 @@
 ; строка экрана может пересекать границу страницы, и ",x" переносит сама.
 
         .export _bl_x, _bl_y, _bl_w, _bl_h, _bl_src
-        .export _blit_mask, _blit_copy, _blit_clear, _blit_plain
-        .export _blit_erase
+        .export _blit_mask, _blit_plain, _blit_erase
         .export _cp_x, _cp_y, _cp_w, _cp_h, _clear_px
 
         .import _screen_rowlo, _screen_rowhi
@@ -127,29 +126,6 @@ be_sta: sta     $FFFF,x
         inc     bl_row
         dec     bl_cnt
         bne     be_row
-        rts
-
-; ---------------------------------------------------------------------------
-; blit_copy - непрозрачный вывод, маска в данных пропускается.
-; Для существ, идущих по уже прокопанному чёрному ходу.
-; ---------------------------------------------------------------------------
-_blit_copy:
-        BLIT_SETUP
-        ldy     #1                     ; изображение лежит вторым в паре
-bc_row:
-        SET_ROW_ADDR bc_sta, bc_sta
-        ldx     #0
-bc_col:
-        lda     (_bl_src),y
-        iny
-        iny
-bc_sta: sta     $FFFF,x
-        inx
-        cpx     _bl_w
-        bne     bc_col
-        inc     bl_row
-        dec     bl_cnt
-        bne     bc_row
         rts
 
 ; ---------------------------------------------------------------------------
@@ -281,24 +257,4 @@ bp_sta: sta     $FFFF,x
         inc     bl_row
         dec     bl_cnt
         bne     bp_row
-        rts
-
-; ---------------------------------------------------------------------------
-; blit_clear - гасит прямоугольник _bl_w x _bl_h байт в чёрный.
-; Стирание следа за спрайтом.
-; ---------------------------------------------------------------------------
-_blit_clear:
-        BLIT_SETUP
-bl_rowl:
-        SET_ROW_ADDR bl_sta, bl_sta
-        ldx     _bl_w
-        dex
-        lda     #0
-bl_col:
-bl_sta: sta     $FFFF,x
-        dex
-        bpl     bl_col
-        inc     bl_row
-        dec     bl_cnt
-        bne     bl_rowl
         rts
