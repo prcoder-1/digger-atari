@@ -17,9 +17,7 @@
 #include "hud.h"
 #include "bags.h"
 #include "sfx.h"
-#ifdef DIGGER_PMG
 #include "pmg.h"
-#endif
 
 /* Спрайты Диггера: по три фазы на каждое из четырёх направлений */
 extern const uint8_t spr_r0_p0[], spr_r0_p1[];
@@ -35,23 +33,22 @@ extern const uint8_t spr_d0_p0[], spr_d0_p1[];
 extern const uint8_t spr_d1_p0[], spr_d1_p1[];
 extern const uint8_t spr_d2_p0[], spr_d2_p1[];
 
-#ifdef DIGGER_PMG
-/* Заливка для аппаратных спрайтов: три плана на кадр (корпус, клюв, колёса).
- * Предсдвинутых фаз здесь нет - позиция игрока задаётся регистром HPOS с
- * точностью до такта цвета, то есть вдвое мельче нашего подшага. */
-extern const uint8_t pm_r0_0[], pm_r0_1[], pm_r0_2[];
-extern const uint8_t pm_r1_0[], pm_r1_1[], pm_r1_2[];
-extern const uint8_t pm_r2_0[], pm_r2_1[], pm_r2_2[];
-extern const uint8_t pm_l0_0[], pm_l0_1[], pm_l0_2[];
-extern const uint8_t pm_l1_0[], pm_l1_1[], pm_l1_2[];
-extern const uint8_t pm_l2_0[], pm_l2_1[], pm_l2_2[];
-extern const uint8_t pm_d0_0[], pm_d0_1[], pm_d0_2[];
-extern const uint8_t pm_d1_0[], pm_d1_1[], pm_d1_2[];
-extern const uint8_t pm_d2_0[], pm_d2_1[], pm_d2_2[];
-extern const uint8_t pm_u0_0[], pm_u0_1[], pm_u0_2[];
-extern const uint8_t pm_u1_0[], pm_u1_1[], pm_u1_2[];
-extern const uint8_t pm_u2_0[], pm_u2_1[], pm_u2_2[];
-#endif
+/* Заливка для аппаратных спрайтов: два плана на кадр (корпус, клюв). Колёса
+ * плана лишились - два игрока ушли врагам, см. src/pmg.s. Предсдвинутых фаз
+ * здесь нет: позиция игрока задаётся регистром HPOS с точностью до такта
+ * цвета, то есть вдвое мельче нашего подшага. */
+extern const uint8_t pm_r0_0[], pm_r0_1[];
+extern const uint8_t pm_r1_0[], pm_r1_1[];
+extern const uint8_t pm_r2_0[], pm_r2_1[];
+extern const uint8_t pm_l0_0[], pm_l0_1[];
+extern const uint8_t pm_l1_0[], pm_l1_1[];
+extern const uint8_t pm_l2_0[], pm_l2_1[];
+extern const uint8_t pm_d0_0[], pm_d0_1[];
+extern const uint8_t pm_d1_0[], pm_d1_1[];
+extern const uint8_t pm_d2_0[], pm_d2_1[];
+extern const uint8_t pm_u0_0[], pm_u0_1[];
+extern const uint8_t pm_u1_0[], pm_u1_1[];
+extern const uint8_t pm_u2_0[], pm_u2_1[];
 
 man_t man;
 
@@ -82,19 +79,17 @@ static const uint8_t *const man_spr[4][3][2] = {
       { spr_u2_p0, spr_u2_p1 } },
 };
 
-#ifdef DIGGER_PMG
 /* [направление][кадр][план] - порядок направлений тот же, что выше */
-static const uint8_t *const man_pm[4][3][3] = {
-    { { pm_r0_0, pm_r0_1, pm_r0_2 }, { pm_r1_0, pm_r1_1, pm_r1_2 },
-      { pm_r2_0, pm_r2_1, pm_r2_2 } },
-    { { pm_l0_0, pm_l0_1, pm_l0_2 }, { pm_l1_0, pm_l1_1, pm_l1_2 },
-      { pm_l2_0, pm_l2_1, pm_l2_2 } },
-    { { pm_d0_0, pm_d0_1, pm_d0_2 }, { pm_d1_0, pm_d1_1, pm_d1_2 },
-      { pm_d2_0, pm_d2_1, pm_d2_2 } },
-    { { pm_u0_0, pm_u0_1, pm_u0_2 }, { pm_u1_0, pm_u1_1, pm_u1_2 },
-      { pm_u2_0, pm_u2_1, pm_u2_2 } },
+static const uint8_t *const man_pm[4][3][2] = {
+    { { pm_r0_0, pm_r0_1 }, { pm_r1_0, pm_r1_1 },
+      { pm_r2_0, pm_r2_1 } },
+    { { pm_l0_0, pm_l0_1 }, { pm_l1_0, pm_l1_1 },
+      { pm_l2_0, pm_l2_1 } },
+    { { pm_d0_0, pm_d0_1 }, { pm_d1_0, pm_d1_1 },
+      { pm_d2_0, pm_d2_1 } },
+    { { pm_u0_0, pm_u0_1 }, { pm_u1_0, pm_u1_1 },
+      { pm_u2_0, pm_u2_1 } },
 };
-#endif
 
 void man_init(void)
 {
@@ -144,21 +139,18 @@ static void take_coin(void)
 /*
  * Выводит Диггера в текущей позиции.
  *
- * В сборке DIGGER_PMG рисунок остаётся тот же и в том же кадровом буфере -
- * аппаратные спрайты лишь подкладывают под него цвет, поэтому выводится и то,
- * и другое. Заливка идёт первой: она грубее рисунка, и линии по краю должны
- * лечь поверх неё, а не наоборот.
+ * Рисунок остаётся в кадровом буфере и при аппаратных спрайтах - те лишь
+ * подкладывают под него цвет, поэтому выводится и то, и другое. Заливка идёт
+ * первой: она грубее рисунка, и линии по краю должны лечь поверх неё, а не
+ * наоборот.
  */
 static void man_draw(void)
 {
-#ifdef DIGGER_PMG
-    pmg_x = man.x;
+    pmg_hpos = PMG_HPOS(man.x);
     pmg_y = man.y;
     pmg_s0 = man_pm[man.dir][man.frame][0];
     pmg_s1 = man_pm[man.dir][man.frame][1];
-    pmg_s2 = man_pm[man.dir][man.frame][2];
     pmg_show();
-#endif
     bl_x = (uint8_t)(man.x >> 1);
     bl_y = man.y;
     bl_h = SPRITE_H;

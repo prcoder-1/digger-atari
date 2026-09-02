@@ -14,6 +14,7 @@
         .export _vbi_frame, _vbi_stick, _vbi_trig
 
         .import _sfx_env_tick, _music_tick
+        .import _dli_vbi
 
 ; Вектор ставится записью напрямую, а не вызовом SETVBV ($E45C).
 ;
@@ -74,6 +75,7 @@ set_vector:
         rts
 
 handler:
+        jsr     _dli_vbi                ; цепочка прерываний по строке - с начала
         jsr     _sfx_env_tick           ; огибающая идёт по кадрам, 50 Гц
         jsr     _music_tick             ; и музыка тоже: темп задан в кадрах
         inc     _vbi_frame

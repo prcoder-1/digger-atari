@@ -27,6 +27,10 @@ extern uint8_t screen_rowhi[SCR_LINES];
  * и включает ANTIC. Вызывать один раз при старте. */
 void screen_init(void);
 
+/* Байт режима строки растра в дисплей-листе: туда ставится бит DL_DLI.
+ * Раскладка со сдвигами на LMS расписана в screen.c. */
+uint8_t *screen_dlist_line(uint8_t line);
+
 /* Заливает весь буфер байтом value (value=0 - чёрный фон). */
 void screen_clear(uint8_t value);
 

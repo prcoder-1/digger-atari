@@ -118,6 +118,37 @@ static void build_dlist(void)
     *d++ = (uint8_t)((uint16_t)dlist >> 8);
 }
 
+/*
+ * Байт режима строки растра в дисплей-листе - туда ставится бит DLI.
+ *
+ * Раскладка задана build_dlist() выше и повторена здесь числами, потому что
+ * прогоны начинаются с трёхбайтовой LMS и сдвигают индекс:
+ *
+ *      строка 0        -> 3            (LMS первого прогона)
+ *      строки 1..101   -> 5 + n
+ *      строка 102      -> 107          (LMS второго прогона)
+ *      строки 103..203 -> 7 + n
+ *      строка 204      -> 211          (LMS третьего прогона)
+ *      строки 205..207 -> 9 + n
+ *
+ * Обе раскладки лежат в одном файле нарочно: разъедься они, бит DLI встал бы
+ * посреди адреса LMS и увёл бы картинку в мусор.
+ */
+uint8_t *screen_dlist_line(uint8_t line)
+{
+    if (line == 0)
+        return dlist + 3;
+    if (line < SCR_RUN0_LINES)
+        return dlist + 5 + line;
+    if (line == SCR_RUN0_LINES)
+        return dlist + 107;
+    if (line < SCR_RUN0_LINES + SCR_RUN1_LINES)
+        return dlist + 7 + line;
+    if (line == SCR_RUN0_LINES + SCR_RUN1_LINES)
+        return dlist + 211;
+    return dlist + 9 + line;
+}
+
 void screen_clear(uint8_t value)
 {
     /* Дырка между прогонами тоже затирается - она невидима, это безвредно */

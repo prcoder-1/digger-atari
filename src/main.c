@@ -21,9 +21,8 @@
 #include "sfx.h"
 #include "menu.h"
 #include "blit.h"
-#ifdef DIGGER_PMG
 #include "pmg.h"
-#endif
+#include "pmgbug.h"
 
 extern const uint8_t spr_z1_p0[];
 extern uint8_t score[3];
@@ -217,17 +216,16 @@ int main(void)
     uint8_t march_note = 0, march_left = 0, rip_shown = 0xFF;
     dir_t want, kd;
 
-#ifdef DIGGER_PMG
     /*
      * Раньше screen_init: тот включает выборку игроков в DMACTL, и к этому
      * моменту PMBASE обязан указывать на уже очищенный буфер - иначе ANTIC
      * успеет вывести на экран мусор из непроинициализированной памяти.
      */
     pmg_init();
-    OS_PCOLR0 = COL_PM0;
-    OS_PCOLR1 = COL_PM1;
-    OS_PCOLR2 = COL_PM2;
-#endif
+    OS_PCOLR0 = COL_PM_BODY;
+    OS_PCOLR1 = COL_PM_BEAK;
+    OS_PCOLR2 = COL_PM_NOBBIN;
+    OS_PCOLR3 = COL_PM_HOBBIN;
     screen_init();
     field_build_tables();
     sfx_init();
@@ -311,6 +309,7 @@ int main(void)
             man_tick(want);
             bags_tick();
             bugs_tick();
+            pmg_bugs_update();  /* цвет врагам - одним проходом по bugs[] */
             missile_tick();
 
             if (!field_coins_left() ||
@@ -405,11 +404,9 @@ int main(void)
                         bugs_remove(hit);
 #else
                     state = ST_DYING;
-#ifdef DIGGER_PMG
                     /* Надгробие растёт в кадровом буфере, а не в спрайте:
                      * фигура Диггера должна уйти с экрана. */
                     pmg_hide();
-#endif
                     dying = DYING_TICKS;
                     march_note = 0;
                     march_left = 0;
@@ -510,6 +507,7 @@ int main(void)
                     clear_px();
                     missile_clear();
                     bugs_respawn();     /* запас врагов на уровень сохраняется */
+                    pmg_bugs_update();  /* и заливка убитых врагов вместе с ними */
                     bags_respawn();
                     bags_redraw_all();  /* вернуть задетых стиранием */
                     man_init();
