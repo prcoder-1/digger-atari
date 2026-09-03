@@ -62,6 +62,10 @@ BUG_FRAMES = ('m0', 'm1', 'm2', 'c0', 'c1', 'c2', 'a0', 'a1', 'a2')
 # "пятого игрока", - поэтому её план идёт в порядке бит снарядов, а не игроков.
 BONUS_FRAMES = ('z1',)
 
+# Спрайты, от которых в кадровый буфер идёт только контур: внутренность
+# закрашивает аппаратура, см. contour().
+CONTOUR_ONLY = ('z1',)
+
 
 def missile_order(b):
     """Байт плана игрока -> байт четырёх снарядов.
@@ -118,6 +122,32 @@ def monochrome(image, outln):
     img = [[1 if v else 0 for v in row] for row in image]
     msk = [[0 if m == 0 else 1 for m in row] for row in outln]
     return img, msk
+
+
+def contour(img):
+    """Оставляет от силуэта только кайму в одну точку.
+
+    Нужна вишенке. Её цвет даёт аппаратура - четыре снаряда PMG, - а у
+    зажжённой точки поля яркость навязана из COLPF1, и краска под ней
+    выцветает в пастельную. Значит внутренность фигуры в кадровом буфере
+    должна ОСТАТЬСЯ ПУСТОЙ: тогда сквозь неё видна вся краска снарядов
+    целиком. Контур же берётся из кадрового буфера и держит форму с точностью
+    до точки, которой у снарядов (ячейка в две точки) нет.
+
+    Маска при этом остаётся прежней, силуэтной: она гасит внутренность в фон,
+    а рисунок кладёт поверх только кайму.
+    """
+    h, w = len(img), len(img[0])
+    out = [[0] * w for _ in range(h)]
+    for y in range(h):
+        for x in range(w):
+            if not img[y][x]:
+                continue
+            if (x == 0 or y == 0 or x == w - 1 or y == h - 1
+                    or not img[y][x - 1] or not img[y][x + 1]
+                    or not img[y - 1][x] or not img[y + 1][x]):
+                out[y][x] = 1
+    return out
 
 
 def shift_rows(rows, shift_px, out_w_px, fill):
@@ -446,6 +476,8 @@ def main():
         if s.name in SKIP:
             continue
         img, msk = monochrome(s.image, s.outln)
+        if s.name in CONTOUR_ONLY:
+            img = contour(img)
         sprites.append({
             'name': s.name,
             'w': len(img[0]),
