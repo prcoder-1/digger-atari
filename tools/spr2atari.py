@@ -66,6 +66,15 @@ BONUS_FRAMES = ('z1',)
 # закрашивает аппаратура, см. contour().
 CONTOUR_ONLY = ('z1',)
 
+# Строка, с которой у вишенки начинаются ягоды. Выше неё в план заливки идут
+# только точки ветки (краска 1), ниже - все.
+#
+# Число НЕ произвольное: краска у снарядов одна на строку растра и меняется
+# прерыванием на стыке клеток сетки, а клетка - восемь строк (DLI_GRID в
+# src/hw.h). Ветка в спрайте кончается на восьмой строке, то есть граница
+# ложится на стык сама. Сдвинете здесь - двигайте и клетку в pmg_bonus_show.
+BONUS_SPLIT_ROW = 8
+
 
 def missile_order(b):
     """Байт плана игрока -> байт четырёх снарядов.
@@ -332,8 +341,15 @@ def emit_pmg(sprites, path, fill_rule):
             for pl, (colors, rule) in enumerate(planes):
                 if fill_rule is not None:
                     rule = fill_rule        # общий ключ перебивает умолчания
-                area = [[1 if v in colors else 0 for v in row]
-                        for row in s['orig']]
+                if as_missile:
+                    # Выше границы - только ветка, ниже - вся фигура: иначе
+                    # ягода вылезла бы в зелёную клетку, а ветка в красную.
+                    area = [[1 if v in ((1,) if y < BONUS_SPLIT_ROW else colors)
+                             else 0 for v in row]
+                            for y, row in enumerate(s['orig'])]
+                else:
+                    area = [[1 if v in colors else 0 for v in row]
+                            for row in s['orig']]
                 if rule == 'erode':
                     area = erode(area)
                 data = downsample(area, rule)
