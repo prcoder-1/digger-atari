@@ -230,6 +230,35 @@ uint8_t bonus_eaten = 0;        /* накопительный счётчик с�
 static uint16_t bonus_time;
 static uint16_t bonus_value;    /* очки за следующего врага, в BCD */
 
+/*
+ * Разрешение выпустить вишенку. В оригинале это bonus_ready: его взводит
+ * init_ta - то есть начало уровня и возрождение после гибели, - а begin_bonus
+ * тут же снимает, "only create one bonus per round" (Work/TA.C).
+ *
+ * Без защёлки вишенка появляется снова сразу после того, как бонус-режим
+ * отыграл: запас врагов к тому времени по-прежнему пуст, а bonus_state
+ * вернулся в OFF, и условие срабатывает каждый такт. Получалась бесконечная
+ * череда вишенок по 1000 очков.
+ */
+static uint8_t bonus_ready = 1;
+
+/*
+ * Вишенка кладётся в кадровый буфер, и любой, кто рисуется поверх, её
+ * выскабливает - а лежит она ровно на гнезде, откуда выходят враги. В
+ * оригинале этой беды нет: там она спрайт номер 14, и движок сам держит её
+ * поверх врагов (draw_bonus в Source/IMAGE_B.C). У нас спрайтов нет, поэтому
+ * она просто выводится заново каждый такт, последней.
+ */
+static void bonus_draw(void)
+{
+    bl_x = (uint8_t)((FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB) >> 1);
+    bl_y = FIELD_Y_OFFSET;
+    bl_w = 2;
+    bl_h = SPRITE_H;
+    bl_src = spr_z1_p0;
+    blit_mask();
+}
+
 /* Глобальная, чтобы её видела телеметрия демо-сборки */
 uint8_t game_lives = START_LIVES;
 
@@ -401,15 +430,12 @@ int main(void)
                 continue;
             }
 
-            /* Вишенка появляется, когда рождать больше некого */
-            if (bonus_state == BONUS_OFF && bugs_left_to_spawn() == 0u) {
+            /* Вишенка появляется, когда рождать больше некого, и за раунд
+             * она одна: bonus_ready снимается тут же, как в оригинале. */
+            if (bonus_ready && bonus_state == BONUS_OFF &&
+                bugs_left_to_spawn() == 0u) {
+                bonus_ready = 0;
                 bonus_state = BONUS_READY;
-                bl_x = (uint8_t)((FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB) >> 1);
-                bl_y = FIELD_Y_OFFSET;
-                bl_w = 2;
-                bl_h = SPRITE_H;
-                bl_src = spr_z1_p0;
-                blit_mask();
             }
 
             /* Диггер дошёл до вишенки */
@@ -495,6 +521,20 @@ int main(void)
              * этом оставалась, и на экране получался зелёный блок без фигуры.
              */
             bugs_draw_all();
+
+            /*
+             * Вишенка выводится ПОСЛЕ врагов - как спрайт 14 в оригинале,
+             * который движок держит поверх спрайтов врагов. Раз она сверху,
+             * с врага под ней снимается цвет: её маска съест ему кусок
+             * фигуры, а заливка аппаратного спрайта осталась бы висеть
+             * зелёным пятном (то же правило, что и для надгробия).
+             */
+            if (bonus_state == BONUS_READY) {
+                pmg_bugs_hide_at(
+                    (uint8_t)(FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB),
+                    FIELD_Y_OFFSET);
+                bonus_draw();
+            }
         }
         /* Гашение эффектов идёт и во время сцены гибели: иначе свип
          * оставался бы висеть на канале до конца сцены. */
@@ -521,6 +561,7 @@ int main(void)
                 bags_init(screen);
                 bugs_init(screen, game_level > 10u ? 10u : game_level);
                 bonus_state = BONUS_OFF;
+                bonus_ready = 1;
                 missile_init(game_level > 10u ? 10u : game_level);
                 hud_score();
                 music_select(0);        /* вернуть фоновую музыку */
@@ -590,6 +631,23 @@ int main(void)
                     cp_w = SPRITE_W_SUB;
                     cp_h = SPRITE_H;
                     clear_px();
+                    /*
+                     * Вишенка с гибелью пропадает, а разрешение выпустить её
+                     * взводится заново - в оригинале это era_bonus() из
+                     * restart_level и bonus_ready=TRUE из init_ta. Стирать
+                     * обязательно: без этого несобранная вишенка осталась бы
+                     * нарисованной на гнезде, но взять её было бы уже нельзя.
+                     */
+                    if (bonus_state == BONUS_READY) {
+                        cp_x = (uint8_t)(FIELD_X_OFFSET +
+                                         (W_MAX - 1u) * CELL_W_SUB);
+                        cp_y = FIELD_Y_OFFSET;
+                        cp_w = SPRITE_W_SUB;
+                        cp_h = SPRITE_H;
+                        clear_px();
+                    }
+                    bonus_state = BONUS_OFF;
+                    bonus_ready = 1;
                     missile_clear();
                     bugs_respawn();     /* запас врагов на уровень сохраняется */
                     bags_respawn();

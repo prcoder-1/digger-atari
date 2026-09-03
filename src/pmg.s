@@ -41,7 +41,7 @@
         .export _pmg_init, _pmg_show, _pmg_hide
         .export _pmg_bug_put
         .export _pmg_hpos, _pmg_y, _pmg_s0, _pmg_s1
-        .export _pmg_by, _pmg_bs, _pmg_bpl
+        .export _pmg_by, _pmg_bs, _pmg_bpl, _pmg_bmask
 
         .import _pm_buf
 
@@ -90,6 +90,7 @@ _pmg_s1: .res 2                 ; данные плана 1 (клюв)
 _pmg_by: .res 1                 ; враг: строка растра
 _pmg_bs: .res 2                 ; враг: данные плана
 _pmg_bpl: .res 1                ; враг: область игрока, 6 или 7
+_pmg_bmask: .res 1              ; враг: маска видимой части заливки
 pm_prev: .res 1                 ; где спрайт Диггера стоял в прошлый раз
 pm_dst0: .res 2                 ; адрес строки в области игрока 0
 pm_dst1: .res 2                 ; то же для игрока 1
@@ -216,6 +217,7 @@ _pmg_bug_put:
 
         ldy     #PMG_H-1
 bp_lp:  lda     (_pmg_bs),y
+        and     _pmg_bmask
         sta     (bug_dst),y
         dey
         bpl     bp_lp

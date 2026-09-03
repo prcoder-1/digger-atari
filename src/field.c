@@ -32,6 +32,14 @@ extern const uint8_t spr_bf_p0[], spr_bf_p1[];
 #define LEVEL_BYTES     80u             /* (15/2 + 1) * 10 */
 #define ROW_BYTES       8u              /* байт на строку карты */
 
+/*
+ * Таблицы поля живут в ОЗУ под ПЗУ ($C000, сегмент BSS_HI): в MAIN они
+ * занимали 896 байт, а места там уже не было. Обнуления при старте у этого
+ * сегмента НЕТ - все шесть массивов заполняются целиком в field_init до
+ * первого чтения, и добавлять сюда что-то, полагающееся на нулевое
+ * начальное значение, нельзя.
+ */
+#pragma bss-name (push, "BSS_HI")
 uint16_t background[H_MAX][W_MAX];
 uint16_t coins[H_MAX];
 
@@ -39,6 +47,7 @@ uint8_t x_log_tbl[80];
 uint8_t x_rem_tbl[80];
 uint8_t y_log_tbl[SCR_LINES];
 uint8_t y_rem_tbl[SCR_LINES];
+#pragma bss-name (pop)
 
 /*
  * Ход прокапывается ровно под спрайт, а не по всей клетке. В оригинале

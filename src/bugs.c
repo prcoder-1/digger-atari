@@ -445,6 +445,18 @@ void bugs_remove(uint8_t i)
         bugs[i].state = BUG_NONE;
         if (bugs_active)
             --bugs_active;
+        /*
+         * В бонус-режиме убитый враг возвращается в запас: "create another bug
+         * if in bonus round" (era_bug, Work/TA.C). Иначе поле пустеет за
+         * несколько секунд - Диггер их как раз и ест, - а запас к началу
+         * бонуса уже исчерпан, и условие конца уровня ("рождать некого, живых
+         * нет") закрывает уровень прямо посреди бонуса.
+         *
+         * bugs_fleeing поднят ровно на бонус-режим, так что он тут и служит
+         * признаком get_bonus().
+         */
+        if (bugs_fleeing && bugs_total < 200u)
+            ++bugs_total;
     }
 }
 
