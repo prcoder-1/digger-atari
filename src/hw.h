@@ -159,8 +159,8 @@
 #define COL_PF0         ATARI_COLOR(0x0, 0)     /* не участвует             */
 
 #define COL_FIELD_PF2   ATARI_COLOR(0x1, 4)     /* тёмный янтарь, фон поля  */
-#define COL_FIELD_PF1   ATARI_COLOR(0x0, 14)    /* яркость рисунка поля     */
-#define COL_HUD_PF2     ATARI_COLOR(0x3, 0)     /* красный оттенок панели   */
+#define COL_FIELD_PF1   ATARI_COLOR(0x0, 12)    /* яркость рисунка поля     */
+#define COL_HUD_PF2     ATARI_COLOR(0x0, 0)     /* панель без оттенка, серая*/
 #define COL_HUD_PF1     ATARI_COLOR(0x0, 15)    /* яркость надписей панели  */
 
 /*
