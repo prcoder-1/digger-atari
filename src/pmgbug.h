@@ -23,4 +23,11 @@ void pmg_bugs_hide_at(uint8_t x, uint8_t y);
 /* Положить заливку врага; звать вместе с выводом его фигуры. */
 void pmg_bug_show(uint8_t i);
 
+/*
+ * Вишенка выводится четырьмя снарядами PMG как "пятый игрок": в кадровом
+ * буфере её нет, поэтому и цвет у неё настоящий, и стереть её нечем.
+ */
+void pmg_bonus_show(uint8_t x_sub, uint8_t y);
+void pmg_bonus_hide(uint8_t y);
+
 #endif /* PMGBUG_H */

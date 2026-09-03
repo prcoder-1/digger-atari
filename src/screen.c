@@ -192,6 +192,10 @@ void screen_init(void)
     OS_COLOR0 = COL_PF0;
     OS_COLOR1 = COL_HUD_PF1;
     OS_COLOR2 = COL_HUD_PF2;
+    /* Краска пятого игрока: ею выводится вишенка. Полосы палитры
+     * её не трогают - в режиме высокого разрешения COLPF3 в выводе
+     * поля не участвует. */
+    OS_COLOR3 = COL_CHERRY;
 
     dli_pf1 = COL_FIELD_PF1;
     dli_pf2 = COL_FIELD_PF2;

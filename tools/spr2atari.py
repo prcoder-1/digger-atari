@@ -58,6 +58,25 @@ MAN_FRAMES = ('r0', 'r1', 'r2', 'l0', 'l1', 'l2',
 # влево (a). Подписи взяты из исходников оригинала, см. шапку src/bugs.c.
 BUG_FRAMES = ('m0', 'm1', 'm2', 'c0', 'c1', 'c2', 'a0', 'a1', 'a2')
 
+# Вишенка. Рисуется ТОЛЬКО аппаратурой - четырьмя снарядами PMG, сведёнными в
+# "пятого игрока", - поэтому её план идёт в порядке бит снарядов, а не игроков.
+BONUS_FRAMES = ('z1',)
+
+
+def missile_order(b):
+    """Байт плана игрока -> байт четырёх снарядов.
+
+    У игрока старший бит - левая ячейка. У снарядов байт поделён на пары:
+    биты 1:0 - снаряд 0, 3:2 - первый, 5:4 - второй, 7:6 - третий, и внутри
+    пары старший бит тоже левый. Снаряды ставятся слева направо, так что
+    порядок ПАР переворачивается, а внутри пары остаётся прежним.
+    """
+    out = 0
+    for cell, bit in enumerate((1, 0, 3, 2, 5, 4, 7, 6)):
+        if b & (1 << (7 - cell)):
+            out |= 1 << bit
+    return out
+
 
 def pack(rows):
     """Матрица нулей и единиц -> байты ANTIC F, старший бит слева."""
@@ -254,21 +273,27 @@ def emit_pmg(sprites, path, fill_rule):
     """
     MAN_PLANES = (((2,), 'and'), ((1,), 'and'))
     BUG_PLANES = (((1, 2, 3), 'and'),)
-    GROUPS = ((MAN_FRAMES, MAN_PLANES, 'Диггера'),
-              (BUG_FRAMES, BUG_PLANES, 'врагов'))
+    # У вишенки правило 'or': её рисунка в кадровом буфере НЕТ вовсе, форму
+    # держит сам план, и сжимать фигуру нельзя - от неё и так остаётся восемь
+    # ячеек на шестнадцать точек.
+    BONUS_PLANES = (((1, 2, 3), 'or'),)
+    GROUPS = ((MAN_FRAMES, MAN_PLANES, 'Диггера', False),
+              (BUG_FRAMES, BUG_PLANES, 'врагов', False),
+              (BONUS_FRAMES, BONUS_PLANES, 'вишенки', True))
     lines = [
         '; pmspr.s - СГЕНЕРИРОВАНО tools/spr2atari.py, не править вручную.',
         '; Заливка для аппаратных спрайтов, правило сжатия: %s' % fill_rule,
         '; По байту на строку растра, 8 бит на 16 точек.',
         '; Диггер: план 0 - корпус (краска 2), план 1 - клюв (краска 1).',
         '; Враги:  план 0 - весь силуэт, один оттенок на фигуру.',
+        '; Вишенка: план для ЧЕТЫРЁХ СНАРЯДОВ, порядок бит у них свой.',
         '',
         '        .segment "RODATA"',
         '',
     ]
     n = 0
     by_name = {s['name']: s for s in sprites}
-    for frames, planes, who in GROUPS:
+    for frames, planes, who, as_missile in GROUPS:
         for name in frames:
             s = by_name.get(name)
             if s is None:
@@ -282,6 +307,8 @@ def emit_pmg(sprites, path, fill_rule):
                 if rule == 'erode':
                     area = erode(area)
                 data = downsample(area, rule)
+                if as_missile:
+                    data = [missile_order(b) for b in data]
                 sym = '_pm_%s_%d' % (name, pl)
                 lines.append('        .export %s' % sym)
                 lines.append('%s:            ; %d строк' % (sym, len(data)))

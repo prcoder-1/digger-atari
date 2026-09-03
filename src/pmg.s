@@ -71,6 +71,7 @@ SIZEP0  = $D008
 SIZEP1  = $D009
 SIZEP2  = $D00A
 SIZEP3  = $D00B
+SIZEM   = $D00C
 GRACTL  = $D01D
 GPRIOR  = $026F                 ; теневая ячейка PRIOR
 
@@ -127,9 +128,13 @@ pi_clr: sta     _pm_buf+$300,x
         sta     HPOSP3
         sta     pm_prev                 ; первое стирание попадёт выше картинки
 
-        lda     #$02                    ; выборка игроков
+        sta     SIZEM                   ; снаряды обычной ширины: 2 такта
+        lda     #$03                    ; выборка игроков и снарядов
         sta     GRACTL
-        lda     #GPRIOR_VAL
+        ; Бит $10 сводит четыре снаряда в "пятого игрока" с краской COLPF3.
+        ; Ею красится вишенка - единственный игрок, которого нет в кадровом
+        ; буфере, см. COL_CHERRY в src/hw.h.
+        lda     #GPRIOR_VAL|$10
         sta     GPRIOR
         rts
 

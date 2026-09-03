@@ -24,7 +24,6 @@
 #include "pmg.h"
 #include "pmgbug.h"
 
-extern const uint8_t spr_z1_p0[];
 extern uint8_t score[3];
 
 /* Надгробие: в исходниках оригинала f1 - самый большой камень, f5 - самый
@@ -243,21 +242,18 @@ static uint16_t bonus_value;    /* очки за следующего врага
 static uint8_t bonus_ready = 1;
 
 /*
- * Вишенка кладётся в кадровый буфер, и любой, кто рисуется поверх, её
- * выскабливает - а лежит она ровно на гнезде, откуда выходят враги. В
- * оригинале этой беды нет: там она спрайт номер 14, и движок сам держит её
- * поверх врагов (draw_bonus в Source/IMAGE_B.C). У нас спрайтов нет, поэтому
- * она просто выводится заново каждый такт, последней.
+ * Вишенка выводится аппаратурой - четырьмя снарядами PMG, сведёнными в пятого
+ * игрока (см. pmg_bonus_show в src/pmgbug.c). В кадровый буфер она не
+ * попадает вовсе, и стереть её поэтому нечем: враги ходят по буферу, а лежит
+ * она ровно на гнезде, откуда они выходят. Раньше её выскабливал первый же
+ * вышедший враг.
+ *
+ * В оригинале беды тоже нет, но по другой причине: там вишенка - спрайт
+ * номер 14, и движок сам держит её поверх спрайтов врагов (draw_bonus в
+ * Source/IMAGE_B.C).
  */
-static void bonus_draw(void)
-{
-    bl_x = (uint8_t)((FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB) >> 1);
-    bl_y = FIELD_Y_OFFSET;
-    bl_w = 2;
-    bl_h = SPRITE_H;
-    bl_src = spr_z1_p0;
-    blit_mask();
-}
+#define CHERRY_X    (uint8_t)(FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB)
+#define CHERRY_Y    FIELD_Y_OFFSET
 
 /* Глобальная, чтобы её видела телеметрия демо-сборки */
 uint8_t game_lives = START_LIVES;
@@ -436,12 +432,14 @@ int main(void)
                 bugs_left_to_spawn() == 0u) {
                 bonus_ready = 0;
                 bonus_state = BONUS_READY;
+                pmg_bonus_show(CHERRY_X, CHERRY_Y);
             }
 
             /* Диггер дошёл до вишенки */
             if (bonus_state == BONUS_READY &&
                 x_log_tbl[man.x] == W_MAX - 1u && y_log_tbl[man.y] == 0u) {
                 bonus_state = BONUS_ON;
+                pmg_bonus_hide(CHERRY_Y);       /* era_bonus в оригинале */
                 bonus_time = 250u;
                 bonus_value = 0x0200u;
                 bugs_fleeing = 1;
@@ -521,20 +519,6 @@ int main(void)
              * этом оставалась, и на экране получался зелёный блок без фигуры.
              */
             bugs_draw_all();
-
-            /*
-             * Вишенка выводится ПОСЛЕ врагов - как спрайт 14 в оригинале,
-             * который движок держит поверх спрайтов врагов. Раз она сверху,
-             * с врага под ней снимается цвет: её маска съест ему кусок
-             * фигуры, а заливка аппаратного спрайта осталась бы висеть
-             * зелёным пятном (то же правило, что и для надгробия).
-             */
-            if (bonus_state == BONUS_READY) {
-                pmg_bugs_hide_at(
-                    (uint8_t)(FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB),
-                    FIELD_Y_OFFSET);
-                bonus_draw();
-            }
         }
         /* Гашение эффектов идёт и во время сцены гибели: иначе свип
          * оставался бы висеть на канале до конца сцены. */
@@ -560,6 +544,7 @@ int main(void)
                  * продолжали падать, а разбитые оставались золотом. */
                 bags_init(screen);
                 bugs_init(screen, game_level > 10u ? 10u : game_level);
+                pmg_bonus_hide(CHERRY_Y);
                 bonus_state = BONUS_OFF;
                 bonus_ready = 1;
                 missile_init(game_level > 10u ? 10u : game_level);
@@ -634,18 +619,11 @@ int main(void)
                     /*
                      * Вишенка с гибелью пропадает, а разрешение выпустить её
                      * взводится заново - в оригинале это era_bonus() из
-                     * restart_level и bonus_ready=TRUE из init_ta. Стирать
-                     * обязательно: без этого несобранная вишенка осталась бы
-                     * нарисованной на гнезде, но взять её было бы уже нельзя.
+                     * restart_level и bonus_ready=TRUE из init_ta. Убирать
+                     * обязательно: иначе несобранная вишенка так и висела бы
+                     * на гнезде, а взять её было бы уже нельзя.
                      */
-                    if (bonus_state == BONUS_READY) {
-                        cp_x = (uint8_t)(FIELD_X_OFFSET +
-                                         (W_MAX - 1u) * CELL_W_SUB);
-                        cp_y = FIELD_Y_OFFSET;
-                        cp_w = SPRITE_W_SUB;
-                        cp_h = SPRITE_H;
-                        clear_px();
-                    }
+                    pmg_bonus_hide(CHERRY_Y);
                     bonus_state = BONUS_OFF;
                     bonus_ready = 1;
                     missile_clear();

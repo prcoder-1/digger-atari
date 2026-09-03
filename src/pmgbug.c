@@ -69,6 +69,9 @@
 #include "game.h"
 #include "hw.h"
 
+/* Вишенка: план для четырёх снарядов, порядок бит у них свой */
+extern const uint8_t pm_z1_0[];
+
 /* Заливка врагов: по одному плану на кадр, см. tools/spr2atari.py */
 extern const uint8_t pm_m0_0[], pm_m1_0[], pm_m2_0[];
 extern const uint8_t pm_c0_0[], pm_c1_0[], pm_c2_0[];
@@ -292,4 +295,54 @@ void pmg_bug_show(uint8_t i)
         last = DLI_GRID_N - 1u;
     for (; j <= last; ++j)
         tab[j] = hpos;
+}
+
+/*
+ * ВИШЕНКА - ПЯТЫЙ ИГРОК.
+ *
+ * Четыре игрока разобраны: двое у Диггера, двое у врагов. Вишенке достаются
+ * снаряды: бит $10 в PRIOR сводит все четыре в "пятого игрока" с общей
+ * краской COLPF3 (pmg_init в src/pmg.s). Снаряд обычной ширины - два такта
+ * цвета, то есть подшаг, и четыре подряд дают ровно ширину спрайта.
+ *
+ * Из кадрового буфера вишенка при этом ушла совсем, и это не побочность, а
+ * условие цвета: у зажжённой точки поля яркость навязана из COLPF1, и любой
+ * тёмный оттенок под ней выцвел бы в пастельный. Раз рисунка нет - краска
+ * работает целиком, и бордовый остаётся бордовым. Заодно вишенку больше
+ * некому стереть: враги ходят по кадровому буферу, а она не в нём.
+ *
+ * Данные снарядов лежат в области буфера со смещением $300, то есть на
+ * "странице" 3 - той же арифметикой, что и области игроков 6 и 7, поэтому
+ * кладёт их та же pmg_bug_put.
+ */
+#define PMG_PL_MISSILES 3u
+
+void pmg_bonus_show(uint8_t x_sub, uint8_t y)
+{
+    uint8_t h = PMG_HPOS(x_sub);
+
+    pmg_by = y;
+    pmg_bpl = PMG_PL_MISSILES;
+    pmg_bmask = 0xFFu;
+    pmg_bs = pm_z1_0;
+    pmg_bug_put();
+
+    GTIA_HPOSM0 = h;
+    GTIA_HPOSM1 = (uint8_t)(h + 2u);
+    GTIA_HPOSM2 = (uint8_t)(h + 4u);
+    GTIA_HPOSM3 = (uint8_t)(h + 6u);
+}
+
+void pmg_bonus_hide(uint8_t y)
+{
+    pmg_by = y;
+    pmg_bpl = PMG_PL_MISSILES;
+    pmg_bmask = 0xFFu;
+    pmg_bs = pm_blank;
+    pmg_bug_put();
+
+    GTIA_HPOSM0 = 0;
+    GTIA_HPOSM1 = 0;
+    GTIA_HPOSM2 = 0;
+    GTIA_HPOSM3 = 0;
 }
