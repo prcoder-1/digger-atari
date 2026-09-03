@@ -156,6 +156,27 @@ void bags_init(uint8_t screen)
     }
 }
 
+/*
+ * Держит ли Диггер мешок собой. Перенос get_man_block (Work/TC.C): подкопав
+ * мешок снизу, Диггер упирается в него и не даёт раскачиваться, пока лезет по
+ * вертикали в том же столбце - в клетке мешка или прямо под ней.
+ *
+ * Условие "лезет" - именно ШАГ по вертикали, а не взгляд: в оригинале сюда
+ * приходит m_dir, а он становится STOP, едва отпущен джойстик. Стоит Диггеру
+ * замереть под мешком - и тот пойдёт качаться.
+ */
+static uint8_t man_blocks(uint8_t xl, uint8_t yl)
+{
+    uint8_t my;
+
+    if (man.move != DIR_UP && man.move != DIR_DOWN)
+        return 0;
+    if (x_log_tbl[man.x] != xl)
+        return 0;
+    my = y_log_tbl[man.y];
+    return (uint8_t)(my == yl || (uint8_t)(my + 1u) == yl);
+}
+
 /* Есть ли опора под мешком: клетка снизу должна быть целиком нетронута */
 static uint8_t supported(const bag_t *b)
 {
@@ -369,7 +390,9 @@ void bags_tick(void)
              * предупреждение, что сейчас упадёт.
              */
             if (x_rem_tbl[b->x] == 0) {
-                if (!supported(b)) {
+                if (!supported(b) &&
+                    !man_blocks(x_log_tbl[b->x],
+                                (uint8_t)(y_log_tbl[b->y] + 1u))) {
                     if (b->dir == DIR_LEFT || b->dir == DIR_RIGHT) {
                         b->state = BAG_FALLING;
                         b->fell = 0;

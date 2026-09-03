@@ -334,6 +334,7 @@ void man_tick(dir_t want)
     }
 
     if (want == DIR_STOP || !can_move(man.dir)) {
+        man.move = DIR_STOP;            /* шага нет: мешок он не держит */
         /* Стоя на месте Диггер всё равно перебирает фазы, поэтому старое
          * изображение надо погасить и здесь. */
         man_erase(man.x, man.y);
@@ -345,6 +346,7 @@ void man_tick(dir_t want)
 
     old_sx = man.x;
     old_y = man.y;
+    man.move = man.dir;
 
     if (man.dir == DIR_RIGHT || man.dir == DIR_LEFT) {
         uint8_t nx = (man.dir == DIR_RIGHT)
