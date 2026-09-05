@@ -36,6 +36,13 @@ void sfx_play(uint16_t bk_period, uint8_t timbre, uint8_t vol, uint8_t ticks);
  * кадровое прерывание. Подробности - в sfx.c и src/pokey.s. */
 void sfx_gold(void);
 
+/* Звук съедаемого камня: щелчок и пульсирующая нота, высота растёт с
+ * номером камня в цепочке. Разбор - в sfx.c и src/pokey.s. */
+void sfx_coin(uint8_t step);
+
+/* Звук съеденного в бонус-режиме врага: три восходящих свипа. */
+void sfx_bug(void);
+
 /* Один игровой такт: гасит эффект, когда его время вышло */
 void sfx_tick(void);
 
@@ -52,5 +59,8 @@ void music_stop(void);
 
 /* Одиночная нота на канале мелодии (траурный марш при гибели) */
 void __fastcall__ music_note(uint8_t audf);
+
+/* Второй голос фанфары на канале 4: тот же тон чуть ниже, см. music.s */
+void __fastcall__ music_note2(uint8_t audf);
 
 #endif /* SFX_H */

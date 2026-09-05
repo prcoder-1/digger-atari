@@ -21,6 +21,8 @@
         .export _sfx_env_tick, _sfx_env_vol, _sfx_env_timbre
         .export _sfx_sweep
         .export _sfx_money, _sfx_m1, _sfx_m2, _sfx_mvol
+        .export _sfx_pulse, _sfx_pph, _sfx_pf, _sfx_pclick, _sfx_pvol
+        .export _sfx_bugcnt, _sfx_bugset, _sfx_bugf, _sfx_bugvol
 
 AUDF1   = $D200
 AUDC1   = $D201
@@ -73,6 +75,39 @@ _sfx_m1:     .res 2             ; делитель чётных тонов, по
 _sfx_m2:     .res 2             ; делитель нечётных тонов, ползёт ВНИЗ
 _sfx_mvol:   .byte 0            ; тембр и громкость на всю последовательность
 sfx_mt:      .res 2             ; временное под сдвиг на четыре
+
+; Звук съедаемого камня. В оригинале (snd_coin/snd_2_coin и chk_coin/chk_2_coin
+; в Work/TH.C) он из ДВУХ частей, и это слышно:
+;
+;   1. Низкий щелчок - один тик периодом 1000. Он перебивает ноту, потому что
+;      chk_coin вызывается ПОСЛЕ chk_2_coin и переписывает t_period.
+;   2. Пульсирующая нота - семь повторов по восемь тиков, из которых звучат
+;      только первые два (coin_2_type 0 и 1). Высота ноты растёт с каждым
+;      камнем подряд: C5, D5, E5 ... до C6, где даётся бонус за восемь.
+;
+; Ровный тон вместо этого звучал как "пик" и с оригиналом не имел общего.
+; Последовательность идёт по кадрам, как и золото: чаще кадрового прерывания
+; менять регистры негде.
+_sfx_pulse:  .byte 0            ; сколько импульсов осталось (7 в начале)
+_sfx_pph:    .byte 0            ; фаза внутри импульса, 0..7
+_sfx_pf:     .res 2             ; делитель ноты
+_sfx_pclick: .res 2             ; делитель щелчка, звучит только первый кадр
+_sfx_pvol:   .byte 0            ; тембр и громкость
+
+; Звук съедаемого врага в бонус-режиме. В оригинале (snd_bug/chk_bug в
+; Work/TH.C) это ТРИ восходящих свипа подряд, а не один тон: делитель начинает
+; с 2000 счётчиков PIT и на каждом тике убавляется на одну шестнадцатую, то
+; есть высота ползёт вверх примерно на две октавы за двадцать тиков. Потом
+; делитель возвращается к началу, и всё повторяется трижды.
+;
+; Звучит не непрерывно: тон выдаётся только на тиках, где остаток от деления
+; счётчика на четыре равен единице или трём. Остальные два тика тишина, отчего
+; свип получается пульсирующим.
+_sfx_bugcnt:    .byte 0            ; тиков в текущем свипе (20 в начале)
+_sfx_bugset: .byte 0            ; свипов осталось (3 в начале)
+_sfx_bugf:   .res 2             ; текущий делитель, ползёт ВНИЗ
+_sfx_bugvol: .byte 0            ; тембр и громкость
+sfx_bt:      .res 2             ; временное под сдвиг на четыре
 
 ; Накопительный счётчик записей в POKEY. Проверять звук снимком экрана
 ; нельзя, а счётчик показывает, доходит ли дело до чипа вообще.
@@ -140,8 +175,14 @@ _pokey_all_off:
 ; секунду затухание с 12 до нуля заняло бы четверть секунды на любой звук.
 _sfx_env_tick:
         lda     _sfx_money
-        beq     env_normal
+        beq     :+
         jmp     money_tick              ; золото ведёт канал само
+:       lda     _sfx_pulse
+        beq     :+
+        jmp     pulse_tick              ; камень ведёт канал сам
+:       lda     _sfx_bugset
+        beq     env_normal
+        jmp     bug_tick                ; съеденный враг ведёт канал сам
 
 env_normal:
         lda     _sfx_env_vol
@@ -177,6 +218,108 @@ env_off:
         sta     AUDC2
 env_done:
         rts
+
+; Очередной кадр звука съеденного врага.
+bug_tick:
+        lda     _sfx_bugcnt
+        bne     bug_have
+        ; свип кончился - начать следующий
+        dec     _sfx_bugset
+        beq     bug_stop
+        lda     #20
+        sta     _sfx_bugcnt
+        lda     #<1480                  ; период БК 100 в делителях POKEY
+        sta     _sfx_bugf
+        lda     #>1480
+        sta     _sfx_bugf+1
+bug_have:
+        lda     _sfx_bugcnt
+        and     #3
+        cmp     #1
+        beq     bug_snd
+        cmp     #3
+        bne     bug_quiet
+bug_snd:
+        lda     _sfx_bugf
+        sta     AUDF1
+        lda     _sfx_bugf+1
+        sta     AUDF2
+        lda     #0
+        sta     AUDC1                   ; связанная пара: звук с AUDC2
+        lda     _sfx_bugvol
+        sta     AUDC2
+        jmp     bug_step
+bug_quiet:
+        lda     #0
+        sta     AUDC2
+bug_step:
+        ; делитель убавляется на одну шестнадцатую: высота ползёт вверх
+        lda     _sfx_bugf
+        sta     sfx_bt
+        lda     _sfx_bugf+1
+        sta     sfx_bt+1
+        lsr     sfx_bt+1
+        ror     sfx_bt
+        lsr     sfx_bt+1
+        ror     sfx_bt
+        lsr     sfx_bt+1
+        ror     sfx_bt
+        lsr     sfx_bt+1
+        ror     sfx_bt
+        sec
+        lda     _sfx_bugf
+        sbc     sfx_bt
+        sta     _sfx_bugf
+        lda     _sfx_bugf+1
+        sbc     sfx_bt+1
+        sta     _sfx_bugf+1
+        dec     _sfx_bugcnt
+        rts
+bug_stop:
+        lda     #0
+        sta     _sfx_bugcnt
+        sta     AUDC2
+        rts
+
+; Очередной кадр звука камня.
+;
+; Фазы 0 и 1 звучат, 2..7 молчат - ровно как coin_2_type в оригинале. На
+; ПЕРВОМ кадре вместо ноты выдаётся низкий щелчок: там chk_coin переписывает
+; период уже после chk_2_coin, и слышно именно щелчок, а следом ноту.
+pulse_tick:
+        lda     _sfx_pph
+        cmp     #2
+        bcs     pulse_off               ; фазы 2..7 - тишина
+
+        ; звучащая фаза: на самом первом кадре щелчок, дальше нота
+        ldx     _sfx_pf
+        ldy     _sfx_pf+1
+        lda     _sfx_pclick+1
+        beq     pulse_note              ; щелчок уже отыграл
+        ldx     _sfx_pclick
+        ldy     _sfx_pclick+1
+        lda     #0                      ; щелчок звучит один кадр
+        sta     _sfx_pclick+1
+pulse_note:
+        stx     AUDF1
+        sty     AUDF2
+        lda     #0
+        sta     AUDC1                   ; связанная пара: звук выходит из AUDC2
+        lda     _sfx_pvol
+        sta     AUDC2
+        jmp     pulse_step
+pulse_off:
+        lda     #0
+        sta     AUDC2
+pulse_step:
+        inc     _sfx_pph
+        lda     _sfx_pph
+        cmp     #8
+        bcc     :+
+        lda     #0
+        sta     _sfx_pph
+        dec     _sfx_pulse
+:       rts
 
 ; Очередной тон последовательности золота. Делитель берётся по чётности
 ; номера, потом оба делителя расходятся на одну шестнадцатую.

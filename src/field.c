@@ -40,7 +40,8 @@ extern const uint8_t spr_bf_p0[], spr_bf_p1[];
  * начальное значение, нельзя.
  */
 #pragma bss-name (push, "BSS_HI")
-uint16_t background[H_MAX][W_MAX];
+/* Сама матрица лежит в отдельном сегменте, см. src/scrmem.s */
+extern uint16_t background[H_MAX][W_MAX];
 uint16_t coins[H_MAX];
 
 uint8_t x_log_tbl[80];

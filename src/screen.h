@@ -37,4 +37,8 @@ void screen_clear(uint8_t value);
 /* Восстанавливает экран ОС - вызывать перед выходом в DOS. */
 void screen_done(void);
 
+/* Тряска поля: короткий отскок вниз и обратно, шаг по кадрам.
+ * Ведёт кадровое прерывание, см. src/vbi.s. */
+void screen_shake(void);
+
 #endif /* SCREEN_H */

@@ -16,13 +16,22 @@
 
         .export _music_start, _music_stop, _music_tick
         .export _music_notes_played
+        .export _mus_atk, _mus_hlvl, _mus_hrate, _mus_drate, _mus_hcnt
 
         .import _music_audf
 
 AUDF3   = $D204
 AUDC3   = $D205
+AUDF4   = $D206
+AUDC4   = $D207
 
-MUS_VOL = $A8                   ; чистый тон, громкость 8
+MUS_TONE = $A0                  ; чистый тон, громкость подставляет огибающая
+MUS_VOL  = $A8                  ; ровная громкость для одиночной ноты
+
+; Фазы огибающей - те же три, что в оригинале (chk_music в Work/TH.C)
+ENV_ATTACK = 0
+ENV_HOLD   = 1
+ENV_DECAY  = 2
 
         .segment "ZEROPAGE"
 mus_ptr:  .res 2                ; текущая позиция в мелодии
@@ -32,6 +41,29 @@ mus_egt:  .res 2                ; длительность восьмой, фо�
 
         .segment "DATA"
 mus_on:   .byte 0
+
+;
+; Огибающая ноты. В оригинале мелодия идёт вторым источником звука - широтно-
+; импульсным, - и у каждой ноты своя форма: ширина импульса нарастает до
+; attack_level, затем спадает к hold_level, а после hold_count тиков падает в
+; ноль. Ровного тона там нет ни одной ноты, и именно это даёт живое звучание.
+;
+; На POKEY ширины импульса нет, зато есть настоящая громкость 0..15, поэтому
+; та же форма кладётся на неё. Громкость держится в формате 8.8: шаги
+; оригинала мельче одной ступени POKEY, и без дробной части атака вышла бы
+; мгновенной, а спад - ступенчатым.
+;
+; Числа приходят из Си (music_select), а не зашиты здесь: у каждой мелодии
+; своя форма, а ca65 не читает sfx.c.
+;
+mus_vol:  .word 0               ; текущая громкость, 8.8
+mus_env:  .byte 0               ; фаза огибающей
+mus_hcnt_left: .byte 0          ; кадров до перехода в спад
+_mus_atk:   .word 0             ; прибавка за кадр в атаке
+_mus_hlvl:  .word 0             ; уровень удержания
+_mus_hrate: .word 0             ; убавка за кадр в удержании
+_mus_drate: .word 0             ; убавка за кадр в спаде
+_mus_hcnt:  .byte 0             ; кадров удержания до спада
 ; Накопительный счётчик сыгранных нот: по нему видно, что проигрыватель
 ; движется, даже если высоты окажутся неверными.
 _music_notes_played: .byte 0
@@ -66,14 +98,61 @@ _music_note:
         sta     AUDC3
         rts
 
+; Отложенный запуск второго голоса. Оба голоса, взятые ровно вместе, слышны
+; как один расстроенный тон; небольшое запаздывание разводит их, и фанфара
+; звучит как два инструмента. Задержка отсчитывается КАДРАМИ в music_tick -
+; игровой такт (10 Гц) для этого слишком груб, на нём голоса разъехались бы
+; на десятую долю секунды.
+N2_DELAY = 3                    ; кадров, то есть около 60 мс
+
+        .segment "DATA"
+n2_audf:  .byte 0               ; что выдать вторым голосом
+n2_left:  .byte 0               ; кадров до выдачи, 0 - нечего ждать
+
+        .segment "CODE"
+
+; void __fastcall__ music_note2(unsigned char audf)
+;
+; Второй голос - на канале 4. Фанфару в конце уровня оригинал играет ДВУМЯ
+; голосами сразу: прямоугольным на t_period и широтно-импульсным на
+; t_period + 35, то есть тем же тоном чуть ниже. Между ними биения, отчего
+; фанфара звучит объёмно, а не как одинокий писк.
+;
+; В единицах POKEY эта добавка ровно +1 и не зависит от ноты: период PIT
+; переводится в делитель как P/37.68, а 35/37.68 = 0.93.
+        .export _music_note2
+_music_note2:
+        sta     n2_audf
+        lda     #N2_DELAY
+        sta     n2_left
+        rts
+
+; Довыдать второй голос, когда его задержка вышла. Зовётся каждый кадр из
+; music_tick, ДО проверки mus_on: фанфара играет при остановленном
+; проигрывателе фоновой мелодии.
+n2_tick:
+        lda     n2_left
+        beq     n2_done
+        dec     n2_left
+        bne     n2_done
+        lda     n2_audf
+        sta     AUDF4
+        lda     #MUS_VOL
+        sta     AUDC4
+n2_done:
+        rts
+
 _music_stop:
         lda     #0
         sta     mus_on
         sta     AUDC3
+        sta     AUDC4                   ; и второй голос фанфары
+        sta     n2_left                 ; и отложенный запуск отменяется
         rts
 
 ; Вызывается из кадрового прерывания
 _music_tick:
+        jsr     n2_tick                 ; второй голос фанфары идёт с задержкой
         lda     mus_on
         bne     :+
         rts
@@ -113,8 +192,12 @@ mus_have:
         tay                             ; Y = высота
         lda     _music_audf,y
         sta     AUDF3
-        lda     #MUS_VOL
-        sta     AUDC3
+        lda     #0                      ; нота начинается с тишины и нарастает
+        sta     mus_vol
+        sta     mus_vol+1
+        sta     mus_env                 ; ENV_ATTACK
+        lda     _mus_hcnt
+        sta     mus_hcnt_left
         inc     _music_notes_played
 
         ; mus_left += mus_egt * X, умножение сложением: X не больше пяти.
@@ -139,7 +222,89 @@ mus_mul:
         inc     mus_ptr
         bne     mus_done
         inc     mus_ptr+1
+
+; --- огибающая: раз в кадр, независимо от того, сменилась ли нота ---
 mus_done:
+        lda     mus_env
+        cmp     #ENV_DECAY
+        beq     mus_decay
+        cmp     #ENV_HOLD
+        beq     mus_hold
+
+; АТАКА: громкость растёт, пока не упрётся в потолок
+        clc
+        lda     mus_vol
+        adc     _mus_atk
+        sta     mus_vol
+        lda     mus_vol+1
+        adc     _mus_atk+1
+        sta     mus_vol+1
+        cmp     #$0F                    ; потолок - полная громкость POKEY
+        bcc     mus_out
+        lda     #$0F
+        sta     mus_vol+1
+        lda     #0
+        sta     mus_vol
+        lda     #ENV_HOLD
+        sta     mus_env
+        jmp     mus_out
+
+; УДЕРЖАНИЕ: громкость сползает к уровню удержания и стоит там,
+; пока не выйдет отпущенное ноте время
+mus_hold:
+        sec
+        lda     mus_vol
+        sbc     _mus_hrate
+        tax
+        lda     mus_vol+1
+        sbc     _mus_hrate+1
+        bcc     mus_hclamp              ; ушли ниже нуля
+        cmp     _mus_hlvl+1
+        bcc     mus_hclamp
+        bne     mus_hstore
+        cpx     _mus_hlvl
+        bcc     mus_hclamp
+mus_hstore:
+        stx     mus_vol
+        sta     mus_vol+1
+        jmp     mus_hcheck
+mus_hclamp:
+        lda     _mus_hlvl
+        sta     mus_vol
+        lda     _mus_hlvl+1
+        sta     mus_vol+1
+mus_hcheck:
+        lda     mus_hcnt_left
+        beq     :+
+        dec     mus_hcnt_left
+        bne     mus_out
+:       lda     #ENV_DECAY
+        sta     mus_env
+        jmp     mus_out
+
+; СПАД: до нуля, дальше нота молчит
+mus_decay:
+        sec
+        lda     mus_vol
+        sbc     _mus_drate
+        tax
+        lda     mus_vol+1
+        sbc     _mus_drate+1
+        bcs     :+
+        lda     #0                      ; ниже нуля - значит тишина
+        tax
+:       stx     mus_vol
+        sta     mus_vol+1
+
+; Выдать громкость.
+;
+; Мелодия звучит ПОВЕРХ эффектов. В оригинале так не выходило: там источник
+; звука один на двоих, и ШИМ-голос музыки выключался, едва любой эффект занял
+; основной канал. У POKEY каналы отдельные, глушить музыку незачем.
+mus_out:
+        lda     mus_vol+1
+        ora     #MUS_TONE
+        sta     AUDC3
         rts
 
 ; Мелодию и темп выставляет обёртка music_select в sfx.c: она пишет прямо

@@ -8,6 +8,10 @@
 # собранного до того, как в исходники добавили огибающую, и по нему был
 # сделан вывод "огибающая не работает". Кода огибающей в том файле не было.
 #
+# Каталог сборки СВОЙ, не build-demo: ключи здесь другие (DEMO_MISSILE), а
+# make различает только даты файлов, не флаги. Собранное этим скриптом
+# подменяло сборку для tools/check.sh, и проверка сверяла чужой двоичный файл.
+#
 # Звук нельзя проверить ни снимком экрана, ни счётчиками: счётчики
 # показывают только, что значения дошли до регистров, но не какие они.
 # По дампу восстанавливаются высота, тембр, длительность в кадрах и форма
@@ -17,12 +21,16 @@ set -u
 cd "$(dirname "$0")/.."
 
 SECS=${1:-25}
+SND_EXTRA=${SND_EXTRA:--DDEMO_MISSILE}
 DUMP=build/pokey.dat
 
-CFLAGS_DEMO="-t atari --cpu 6502 -Osir --standard c99 -I src -DDIGGER_DEMO -DDEMO_MISSILE"
+# Цель обязана совпадать с той, на которую собирается игра: линковка идёт
+# библиотекой из Makefile. Здесь оставалась цель "atari", и после перехода
+# на "atarixl" скрипт молча падал на сборке.
+CFLAGS_DEMO="-t atarixl --cpu 6502 -Osir --standard c99 -I src -DDIGGER_DEMO ${SND_EXTRA:-}"
 
 echo "сборка демо..."
-make BUILD=build-demo CFLAGS="$CFLAGS_DEMO" >/dev/null 2>&1 \
+make BUILD=build-sound CFLAGS="$CFLAGS_DEMO" >/dev/null 2>&1 \
     || { echo "сборка не удалась"; exit 1; }
 
 export DISPLAY=:99
@@ -40,7 +48,7 @@ rm -f "$DUMP"
 # слишком грубо: ступени огибающей сливаются и выглядят как её отсутствие.
 timeout "$SECS" atari800 -pal -windowed -win-width 336 -win-height 240 \
     -pokeyrec -pokeyrec-ascii -pokeyrec-interval 30 -pokeyrec-file "$DUMP" \
-    -run build-demo/digger.xex >/dev/null 2>&1
+    -run build-sound/digger.xex >/dev/null 2>&1
 
 pkill -x atari800 2>/dev/null
 [ -s "$DUMP" ] || { echo "дамп не создан"; exit 1; }

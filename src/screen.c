@@ -7,8 +7,9 @@
 #include "screen.h"
 #include "dli.h"
 
-uint8_t screen_rowlo[SCR_LINES];
-uint8_t screen_rowhi[SCR_LINES];
+/* Сами таблицы лежат в отдельном сегменте, см. src/scrmem.s */
+extern uint8_t screen_rowlo[SCR_LINES];
+extern uint8_t screen_rowhi[SCR_LINES];
 
 /* Сохранённое состояние экрана ОС, чтобы вернуть его при выходе */
 static uint8_t   saved_sdmctl;
@@ -87,10 +88,17 @@ static void build_dlist(void)
 {
     uint8_t *d = dlist;
 
-    /* 24 пустые строки растра до начала картинки */
+    /*
+     * 24 пустые строки растра до начала картинки, но ЧЕТЫРЬМЯ командами, а не
+     * тремя: 8 + 8 + 7 + 1. Последняя - управляемая, её длину меняет тряска
+     * поля при ударе мешка (screen_shake в src/vbi.s). Команда пустых строк
+     * задаёт от одной до восьми, поэтому одним байтом картинка опускается на
+     * 0..7 строк, и перестраивать список не нужно.
+     */
     *d++ = DL_BLANK8;
     *d++ = DL_BLANK8;
-    *d++ = DL_BLANK8;
+    *d++ = DL_BLANK7;
+    *d++ = DL_BLANK1;
 
     /*
      * Бит DLI стоит НЕ на последней строке панели, а на DLI_LEAD строк выше.
@@ -151,17 +159,19 @@ static void build_dlist(void)
  */
 uint8_t *screen_dlist_line(uint8_t line)
 {
+    /* Смещения на единицу больше, чем можно ожидать: пустых строк в начале
+     * четыре команды, а не три (см. build_dlist). */
     if (line == 0)
-        return dlist + 3;
+        return dlist + 4;
     if (line < SCR_RUN0_LINES)
-        return dlist + 5 + line;
+        return dlist + 6 + line;
     if (line == SCR_RUN0_LINES)
-        return dlist + 107;
+        return dlist + 108;
     if (line < SCR_RUN0_LINES + SCR_RUN1_LINES)
-        return dlist + 7 + line;
+        return dlist + 8 + line;
     if (line == SCR_RUN0_LINES + SCR_RUN1_LINES)
-        return dlist + 211;
-    return dlist + 9 + line;
+        return dlist + 212;
+    return dlist + 10 + line;
 }
 
 void screen_clear(uint8_t value)

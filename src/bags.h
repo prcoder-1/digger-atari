@@ -51,6 +51,9 @@ void bags_respawn(void);
 /* Вернуть на экран уцелевшие мешки после уборки поля */
 void bags_redraw_all(void);
 
+/* Стоит ли мешок на пути: сверху и снизу его не сдвинуть */
+uint8_t bags_blocked(uint8_t x_sub, uint8_t y);
+
 /* Придавил ли падающий мешок Диггера */
 uint8_t bags_hit_man(void);
 

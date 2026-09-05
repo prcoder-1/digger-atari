@@ -21,6 +21,7 @@
 #include "sfx.h"
 #include "menu.h"
 #include "blit.h"
+#include "dli.h"
 #include "pmg.h"
 #include "pmgbug.h"
 
@@ -94,6 +95,7 @@ static const uint8_t *tune_len;
 static uint8_t tune_notes;      /* сколько нот в мелодии   */
 static uint8_t tune_note;       /* какая следующая         */
 static uint8_t tune_left;       /* тактов до конца текущей */
+static uint8_t tune_two;        /* играть ли вторым голосом */
 
 /* Один такт мелодии; возвращает 0, когда она отзвучала */
 static uint8_t tune_tick(void)
@@ -102,6 +104,8 @@ static uint8_t tune_tick(void)
         if (tune_note >= tune_notes)
             return 0;
         music_note(tune_audf[tune_note]);
+        if (tune_two)
+            music_note2((uint8_t)(tune_audf[tune_note] + 1u));
         tune_left = tune_len[tune_note];
         ++tune_note;
     }
@@ -224,11 +228,17 @@ uint8_t levels_done = 0;        /* накопительный счётчик д�
 #define BONUS_READY  1u
 #define BONUS_ON     2u
 
-extern const uint8_t spr_z1_p0[];       /* вишенка: контур */
 
 uint8_t bonus_state = BONUS_OFF;
 uint8_t bonus_eaten = 0;        /* накопительный счётчик съеденных врагов */
 static uint16_t bonus_time;
+/*
+ * Тактов мигания в начале бонуса. В оригинале bonus_flash=20, и столько же
+ * тактов мигает хвост: условие там - "bonus_flash || bonus_time < 20"
+ * (Work/TC.C). Одно число на оба конца, поэтому и константа одна.
+ */
+#define BONUS_FLASH   20u
+static uint8_t bonus_flash;
 static uint16_t bonus_value;    /* очки за следующего врага, в BCD */
 
 /*
@@ -244,29 +254,28 @@ static uint16_t bonus_value;    /* очки за следующего врага
 static uint8_t bonus_ready = 1;
 
 /*
- * Вишенка собрана из двух половин: контур в кадровом буфере, заливка -
- * четырьмя снарядами PMG (pmg_bonus_show в src/pmgbug.c).
+ * Вишенка рисуется ТОЛЬКО аппаратно - четырьмя снарядами PMG
+ * (pmg_bonus_show в src/pmgbug.c).
  *
- * Контур, как и всё в кадровом буфере, выскабливается тем, кто рисуется
- * поверх, - а лежит вишенка ровно на гнезде, откуда выходят враги. Поэтому он
- * выводится заново каждый такт, последним. В оригинале этой беды нет: там
- * вишенка спрайт номер 14, и движок сам держит её поверх спрайтов врагов
- * (draw_bonus в Source/IMAGE_B.C).
- *
- * Заливка снарядов в перерисовке не нуждается - её кадровым буфером не
- * достать, - и кладётся один раз при появлении.
+ * Контура в кадровом буфере у неё раньше был, но его всё равно не было видно,
+ * а стоил он дорого: вишенка лежит ровно на гнезде, откуда выходят враги, и
+ * контур выскабливался всяким, кто рисовался поверх. Приходилось выводить его
+ * заново каждый такт последним, снимать цвет с врага под ним и отдельно
+ * стирать при обрыве бонуса. Заливка снарядов ничего этого не требует: её
+ * кадровым буфером не достать, и кладётся она один раз при появлении.
  */
 #define CHERRY_X    (uint8_t)(FIELD_X_OFFSET + (W_MAX - 1u) * CELL_W_SUB)
 #define CHERRY_Y    FIELD_Y_OFFSET
 
-static void cherry_outline(void)
+/*
+ * Палитра поля: обычная или бонусная. Бонусная отличается только ЯРКОСТЬЮ,
+ * оттенок тот же - поле становится светлее, а не другого цвета. Краски идут
+ * парой, поэтому и переключаются вместе: порознь их легко разъехаться.
+ */
+static void field_palette(uint8_t bright)
 {
-    bl_x = (uint8_t)(CHERRY_X >> 1);
-    bl_y = CHERRY_Y;
-    bl_w = 2;
-    bl_h = SPRITE_H;
-    bl_src = spr_z1_p0;
-    blit_mask();
+    dli_pf1 = bright ? COL_BONUS_PF1 : COL_FIELD_PF1;
+    dli_pf2 = bright ? COL_BONUS_PF2 : COL_FIELD_PF2;
 }
 
 /* Глобальная, чтобы её видела телеметрия демо-сборки */
@@ -435,6 +444,7 @@ int main(void)
                 tune_audf = done_audf;
                 tune_len = done_len;
                 tune_notes = DONE_NOTES;
+                tune_two = 1;           /* фанфара в два голоса, как в оригинале */
                 tune_note = 0;
                 tune_left = 0;
                 continue;
@@ -447,7 +457,6 @@ int main(void)
                 bonus_ready = 0;
                 bonus_state = BONUS_READY;
                 pmg_bonus_show(CHERRY_X, CHERRY_Y);
-                cherry_outline();
             }
 
             /* Диггер дошёл до вишенки */
@@ -458,17 +467,37 @@ int main(void)
                 bonus_time = 250u;
                 bonus_value = 0x0200u;
                 bugs_fleeing = 1;
-                music_select(1);        /* бонусная мелодия вдвое быстрее */
+                bonus_flash = BONUS_FLASH;
+                field_palette(1);               /* palette(1) в оригинале */
+                /* Бонусную мелодию включает НЕ этот момент, а конец мигания:
+                 * в оригинале init_music(0) стоит там же, где гаснет сирена. */
                 score_add(0x1000u);             /* вишенка - 1000 очков */
                 hud_score();
             }
 
             if (bonus_state == BONUS_ON) {
-                /* Сирена: два тона попеременно, по одному на такт */
-                sfx_play((bonus_time & 1u) ? 61u : 75u, SFX_TONE, 8u, 1u);
-                if (--bonus_time == 0) {
+                --bonus_time;
+                /*
+                 * Мигание идёт на обоих концах бонуса: первые BONUS_FLASH
+                 * тактов и последние столько же. Сирена звучит ТОЛЬКО пока
+                 * мигает - в оригинале init_chase() стоит внутри той же
+                 * ветки, а между вспышками играет бонусная мелодия.
+                 */
+                if (bonus_flash != 0u || bonus_time < BONUS_FLASH) {
+                    field_palette((uint8_t)((bonus_time & 1u) == 0u));
+                    /* Сирена: два тона попеременно, по одному на такт */
+                    sfx_play((bonus_time & 1u) ? 61u : 75u, SFX_TONE, 8u, 1u);
+                    if (bonus_flash != 0u && --bonus_flash == 0u) {
+                        /* Мигание начала кончилось: сирена смолкает, играет
+                         * бонусная мелодия, поле остаётся в чужой палитре. */
+                        music_select(1);
+                        field_palette(1);
+                    }
+                }
+                if (bonus_time == 0u) {
                     bonus_state = BONUS_OFF;
                     bugs_fleeing = 0;
+                    field_palette(0);           /* palette(0) в оригинале */
                     music_select(0);
                 }
             }
@@ -489,7 +518,7 @@ int main(void)
                         bonus_value <<= 1;      /* BCD-удвоение сдвигом верно
                                                  * для 200, 400, 800 и 1600 */
                     hud_score();
-                    sfx_play(93u, SFX_TONE, 12u, 2u);
+                    sfx_bug();      /* три свипа, как в оригинале */
                 } else {
 #ifdef DEMO_INVULNERABLE
                     /* Испытательная фикстура: бонус-режим не зависит от того,
@@ -507,6 +536,7 @@ int main(void)
                     pmg_hide();
                     pmg_bugs_hide_at(man.x, man.y);
                     dying = DYING_TICKS;
+                    tune_two = 0;       /* марш одноголосый, как init_music(2) */
                     tune_audf = march_audf;
                     tune_len = march_len;
                     tune_notes = 11u;
@@ -534,18 +564,6 @@ int main(void)
              * этом оставалась, и на экране получался зелёный блок без фигуры.
              */
             bugs_draw_all();
-
-            /*
-             * Контур вишенки идёт ПОСЛЕ врагов - как спрайт 14 в оригинале,
-             * который движок держит поверх спрайтов врагов. Раз он сверху, с
-             * врага под ним снимается цвет: маска съест тому кусок фигуры, а
-             * заливка его аппаратного спрайта осталась бы висеть зелёным
-             * пятном (то же правило, что и для надгробия).
-             */
-            if (bonus_state == BONUS_READY) {
-                pmg_bugs_hide_at(CHERRY_X, CHERRY_Y);
-                cherry_outline();
-            }
         }
         /* Гашение эффектов идёт и во время сцены гибели: иначе свип
          * оставался бы висеть на канале до конца сцены. */
@@ -574,6 +592,7 @@ int main(void)
                 pmg_bonus_hide(CHERRY_Y);
                 bonus_state = BONUS_OFF;
                 bonus_ready = 1;
+                field_palette(0);               /* бонус оборван концом уровня */
                 missile_init(game_level > 10u ? 10u : game_level);
                 hud_score();
                 music_select(0);        /* вернуть фоновую музыку */
@@ -651,15 +670,9 @@ int main(void)
                      * на гнезде, а взять её было бы уже нельзя.
                      */
                     pmg_bonus_hide(CHERRY_Y);
-                    if (bonus_state == BONUS_READY) {
-                        cp_x = CHERRY_X;        /* контур сам не пропадёт */
-                        cp_y = CHERRY_Y;
-                        cp_w = SPRITE_W_SUB;
-                        cp_h = SPRITE_H;
-                        clear_px();
-                    }
                     bonus_state = BONUS_OFF;
                     bonus_ready = 1;
+                    field_palette(0);           /* бонус оборван гибелью */
                     missile_clear();
                     bugs_respawn();     /* запас врагов на уровень сохраняется */
                     bags_respawn();

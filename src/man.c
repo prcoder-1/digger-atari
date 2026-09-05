@@ -155,14 +155,9 @@ static void take_coin(void)
         return;
 
     score_add(COIN_SCORE);
-    /* Восемь нот подряд вверх, как в оригинале: каждый следующий камень
-     * в цепочке звучит выше предыдущего. Периоды взяты из порта на БК. */
-    {
-        static const uint16_t coin_note[8] = {
-            114u, 101u, 90u, 85u, 76u, 67u, 60u, 57u
-        };
-        sfx_play(coin_note[coin_run & 7u], SFX_TONE, 10u, 2u);
-    }
+    /* Звук камня из двух частей, как в оригинале: щелчок и пульсирующая
+     * нота, высота которой растёт с номером камня в цепочке. */
+    sfx_coin(coin_run);
     coin_timer = COIN_RUN_TICKS;
     if (++coin_run == 8u) {
         coin_run = 0;
@@ -353,6 +348,17 @@ void man_tick(dir_t want)
                    ? (uint8_t)(man.x + POS_X_STEP) : (uint8_t)(man.x - POS_X_STEP);
         if (!bags_push(x_log_tbl[nx], y_log_tbl[man.y], man.dir)) {
             man_draw();                 /* мешок упёрся - Диггер не идёт */
+            return;
+        }
+    } else {
+        /* Сверху и снизу мешок не сдвинуть: он не пускает. Проверка идёт по
+         * БУДУЩЕМУ положению - иначе Диггер успел бы влезть в мешок и только
+         * потом упереться. */
+        uint8_t ny = (man.dir == DIR_DOWN)
+                   ? (uint8_t)(man.y + SUBSTEP_Y_LINES)
+                   : (uint8_t)(man.y - SUBSTEP_Y_LINES);
+        if (bags_blocked(man.x, ny)) {
+            man_draw();
             return;
         }
     }

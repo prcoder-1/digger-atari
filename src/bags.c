@@ -8,6 +8,7 @@
 #include "sfx.h"
 #include "bugs.h"
 #include "hud.h"
+#include "screen.h"
 
 extern const uint8_t spr_1_p0[],  spr_1_p1[];    /* стоит прямо           */
 extern const uint8_t spr_b4_p0[], spr_b4_p1[];   /* наклон влево          */
@@ -252,6 +253,39 @@ static void bag_crush_bugs(const bag_t *b)
     }
 }
 
+/*
+ * Стоит ли на пути мешок. Вбок его толкают (bags_push), а сверху и снизу
+ * сдвинуть нельзя - он просто не пускает. В оригинале это ветка move_bag для
+ * UP/DOWN, в порте на БК - collision_flag при man.dir вверх или вниз.
+ */
+uint8_t bags_blocked(uint8_t x_sub, uint8_t y)
+{
+    uint8_t i;
+
+    for (i = 0; i < MAX_BAGS; ++i) {
+        const bag_t *b = &bags[i];
+        if (b->state != BAG_STANDING && b->state != BAG_LOOSE)
+            continue;
+        if ((uint8_t)(b->x - x_sub + 3u) < 7u &&
+            (uint16_t)(b->y - y + 14u) < 29u)
+            return 1;
+    }
+    return 0;
+}
+
+/*
+ * Держит ли Диггер мешок снизу. Пока он стоит прямо под мешком и ЛЕЗЕТ ВВЕРХ,
+ * мешок не начинает раскачиваться: подкопал - и подпираешь его собой. Отпустил
+ * или свернул - мешок пошёл. В оригинале это get_man_block, в порте на БК -
+ * та же проверка по клетке снизу и направлению вверх.
+ */
+static uint8_t man_holds(const bag_t *b)
+{
+    return (uint8_t)(man.dir == DIR_UP &&
+                     x_log_tbl[man.x] == x_log_tbl[b->x] &&
+                     y_log_tbl[man.y] == (uint8_t)(y_log_tbl[b->y] + 1u));
+}
+
 /* Ищет стоящий или качающийся мешок в клетке; 0xFF - мешка нет */
 static uint8_t bag_at(uint8_t x_log, uint8_t y_log)
 {
@@ -396,7 +430,7 @@ void bags_tick(void)
                     if (b->dir == DIR_LEFT || b->dir == DIR_RIGHT) {
                         b->state = BAG_FALLING;
                         b->fell = 0;
-                    } else {
+                    } else if (!man_holds(b)) {
                         b->state = BAG_LOOSE;
                         b->count = LOOSE_WAIT;
                     }
@@ -450,14 +484,18 @@ void bags_tick(void)
              * если под мешком снова целая земля - как в оригинале. */
             if (y_rem_tbl[b->y] == 0 && supported(b)) {
                 b->state = b->fell ? BAG_BREAKING : BAG_STANDING;
-                if (b->fell)
+                if (b->fell) {
                     sfx_play(750u, SFX_THUD, 12u, 2u);   /* глухой удар */
+                    screen_shake();                      /* и поле подпрыгивает */
+                }
                 b->count = BREAK_TICKS;
             }
             if (b->y >= (FIELD_Y_OFFSET + (H_MAX - 1u) * CELL_H_PX)) {
                 b->y = (uint8_t)(FIELD_Y_OFFSET + (H_MAX - 1u) * CELL_H_PX);
                 b->state = BAG_BREAKING;
                 b->count = BREAK_TICKS;
+                sfx_play(750u, SFX_THUD, 12u, 2u);
+                screen_shake();         /* удар о дно поля тоже трясёт */
             }
             break;
 

@@ -13,6 +13,8 @@
 
         .export _screen_buf
         .export _dlist
+        .export _screen_rowlo, _screen_rowhi
+        .export _background
 
         .segment "SCRBUF"
 _screen_buf:
@@ -21,3 +23,14 @@ _screen_buf:
         .segment "DLIST"
 _dlist:
         .res    $0100
+
+; Свободное ОЗУ за дисплей-листом. Сюда вынесено из BSS то, что не помещалось
+; в MAIN и НЕ ТРЕБУЕТ обнуления - обе таблицы и матрицу фона код заполняет
+; целиком сам, до первого чтения (screen_init и field_init).
+        .segment "ROWTAB"
+_screen_rowlo:
+        .res    208
+_screen_rowhi:
+        .res    208
+_background:
+        .res    300             ; H_MAX * W_MAX слов: состояние клеток поля
