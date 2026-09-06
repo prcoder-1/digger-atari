@@ -16,7 +16,21 @@ OUT=${2:?нужен путь к .png}
 DELAY=${3:-4}
 shift 3 2>/dev/null || shift $#
 
-DISP=:99
+# ОТДЕЛЬНЫЙ дисплей и убийство ТОЛЬКО своего эмулятора - и то, и другое не
+# прихоть. На :99 работает эмулятор соседнего проекта: "pkill -x atari800" бил
+# по имени процесса и глушил чужую работу, а снимок брался с чужого окна и
+# выходил пустым - выглядело это как поломка игры. Свой процесс запоминается по
+# номеру в PIDFILE и добивается по нему.
+DISP=${DIGGER_DISPLAY:-:97}
+PIDFILE=${DIGGER_PIDFILE:-/tmp/.digger-atari800.pid}
+
+kill_prev() {
+    if [ -f "$PIDFILE" ]; then
+        kill "$(cat "$PIDFILE")" 2>/dev/null
+        rm -f "$PIDFILE"
+        sleep 0.5
+    fi
+}
 export DISPLAY=$DISP
 export SDL_VIDEODRIVER=x11
 
@@ -30,13 +44,20 @@ fi
 # дочернее окно корня, и живой эмулятор с прошлого раза перехватывает снимок.
 # Это уже приводило к ложному выводу - три сборки с разными цветами дали
 # побайтово одинаковые кадры.
-pkill -x atari800 2>/dev/null
-sleep 0.5
+kill_prev
+# Ждать ИСЧЕЗНОВЕНИЯ окна, а не спать наугад: полсекунды хватало не всегда, и
+# снимок брался с мёртвого окна прошлого прогона - кадр выходил пустым, а
+# выглядело это как поломка игры. Ровно так же сделано в tools/keytest.sh.
+for _ in $(seq 20); do
+    xwininfo -root -children 2>/dev/null | grep -q '^     0x' || break
+    sleep 0.5
+done
 
 atari800 -pal -xl -nobasic -nosound -windowed \
          -win-width 336 -win-height 240 \
          "$@" -run "$XEX" >/dev/null 2>&1 &
 EMU_PID=$!
+echo "$EMU_PID" > "$PIDFILE"
 
 sleep "$DELAY"
 

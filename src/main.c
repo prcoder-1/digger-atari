@@ -296,7 +296,15 @@ uint8_t game_lives = START_LIVES;
  * из зашитого маршрута, и обе процедуры остаются без единого вызова - cc65
  * честно предупреждал об этом на каждой сборке make demo.
  */
-#ifndef DIGGER_DEMO
+/*
+ * DEMO_KEYS - демо-сборка, которая берёт ввод НЕ из маршрута, а с клавиатуры и
+ * джойстика, оставляя телеметрию. Нужна ровно затем, чтобы проверять ввод: до
+ * неё харнесс не умел этого вовсе, а клавиши в сборке llvm-mos пришлось делать
+ * своими руками (ПЗУ ОС выключено, и заполнять ячейку CH некому).
+ *
+ * Клавиши подаются эмулятору через xdotool, см. tools/keytest.sh.
+ */
+#if !defined(DIGGER_DEMO) || defined(DEMO_KEYS)
 
 /* Джойстик: биты активны нулём (1 = вверх, 2 = вниз, 4 = влево, 8 = вправо).
  * Таблица разбирает и диагонали: побеждает первое совпавшее направление. */
@@ -331,7 +339,7 @@ static dir_t key_dir(void)
     }
 }
 
-#endif /* !DIGGER_DEMO */
+#endif /* !DIGGER_DEMO || DEMO_KEYS */
 
 /* Обнуление сегмента BSS_HI, см. src/util.s */
 void clear_hi_bss(void);
@@ -410,7 +418,14 @@ int main(void)
             wait_frame();
         next = (uint8_t)(next + TICK_FRAMES);
 
-#ifdef DIGGER_DEMO
+#if defined(DIGGER_DEMO) && defined(DEMO_KEYS)
+        /* Ввод настоящий, телеметрия на месте - см. рамку у stick_dir */
+        want = stick_dir(vbi_stick);
+        kd = key_dir();
+        if (want == DIR_STOP)
+            want = kd;
+        demo_telemetry();
+#elif defined(DIGGER_DEMO)
         /* Вместо ввода - зашитый маршрут; телеметрия рисуется каждый такт */
         want = demo_input();
         (void)kd;
