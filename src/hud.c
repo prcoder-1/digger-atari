@@ -19,7 +19,9 @@
  * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
  * cc65 сюда не дотягивается, он чистит только сегмент BSS.
  */
+#ifdef __CC65__
 #pragma bss-name (push, "BSS_HI")
+#endif
 
 
 extern const uint8_t spr_s0_p0[], spr_s0_p1[];  /* значок жизни, две фазы */
@@ -99,4 +101,6 @@ void hud_lives(uint8_t n)
     }
 }
 
+#ifdef __CC65__
 #pragma bss-name (pop)
+#endif

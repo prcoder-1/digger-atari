@@ -74,7 +74,9 @@
  * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
  * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
  */
+#ifdef __CC65__
 #pragma bss-name (push, "BSS_HI")
+#endif
 
 
 /* Вишенка: план для четырёх снарядов, порядок бит у них свой */
@@ -369,4 +371,6 @@ void pmg_bonus_hide(uint8_t y)
     GTIA_HPOSM3 = 0;
 }
 
+#ifdef __CC65__
 #pragma bss-name (pop)
+#endif

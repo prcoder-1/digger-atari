@@ -61,7 +61,46 @@ EMU       := atari800
 # поднял бы RAM_SIZE=576 и скрыл бы выход за пределы памяти.
 EMUFLAGS  := -pal -nobasic
 
-.PHONY: all clean run run130 size atr demo play sound
+.PHONY: all clean run run130 size atr demo play sound mos mos-demo
+
+# ---------------------------------------------------------------------------
+# Сборка тем же исходником, но компилятором llvm-mos.
+#
+# Ассемблер НЕ дублируется: файлы src/*.s и assets/*.s переводятся на лету
+# скриптом tools/ca65_to_mos.py. Источник правды остаётся один - иначе однажды
+# поправят только одну редакцию блиттера.
+#
+# SDK надо один раз собрать и установить, в поставке его нет:
+#   cd ~/ATARI/llvm-mos-sdk/build && make common atari8-common atari8
+#   cmake --install . --prefix ~/ATARI/llvm-mos-sdk/install
+# Разбор устройства и ловушек - в doc/llvm-mos.md.
+# ---------------------------------------------------------------------------
+MOSBIN    ?= $(HOME)/ATARI/llvm-mos-sdk/build/_deps/llvm-mos-src/bin
+MOSSDK    ?= $(HOME)/ATARI/llvm-mos-sdk/install
+MOSBUILD  := build-mos
+MOSFLAGS  := --config $(MOSSDK)/bin/mos-atari8.cfg -Oz --std=c99 -I src \
+             -Wno-unknown-pragmas
+MOSASM    := $(patsubst src/%.s,$(MOSBUILD)/%.S,$(ASRC)) \
+             $(patsubst assets/%.s,$(MOSBUILD)/a_%.S,$(GSRC))
+
+$(MOSBUILD):
+	@mkdir -p $(MOSBUILD)
+
+$(MOSBUILD)/%.S: src/%.s tools/ca65_to_mos.py | $(MOSBUILD)
+	python3 tools/ca65_to_mos.py $< $@
+
+$(MOSBUILD)/a_%.S: assets/%.s tools/ca65_to_mos.py | $(MOSBUILD)
+	python3 tools/ca65_to_mos.py $< $@
+
+mos: $(MOSASM) $(CSRC) $(HDRS) mos/init.S mos/nmi.S mos/link.ld | $(MOSBUILD)
+	$(MOSBIN)/mos-clang $(MOSFLAGS) $(MOSEXTRA) -o $(MOSBUILD)/digger.xex \
+	    $(CSRC) $(MOSASM) mos/init.S mos/nmi.S -T mos/link.ld \
+	    -Wl,-Map,$(MOSBUILD)/digger.map
+	@echo "сборка llvm-mos: $(MOSBUILD)/digger.xex"
+
+mos-demo:
+	$(MAKE) MOSEXTRA="-DDIGGER_DEMO" MOSBUILD=build-mos-demo mos
+
 
 all: $(XEX)
 

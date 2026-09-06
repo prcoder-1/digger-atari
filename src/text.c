@@ -21,7 +21,9 @@
  * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
  * cc65 сюда не дотягивается, он чистит только сегмент BSS.
  */
+#ifdef __CC65__
 #pragma bss-name (push, "BSS_HI")
+#endif
 
 
 #define CHARSET_ROM  ((const uint8_t *)0xE000u)
@@ -104,4 +106,6 @@ void text_bcd6(uint8_t x_byte, uint8_t y, const uint8_t *bcd)
     }
 }
 
+#ifdef __CC65__
 #pragma bss-name (pop)
+#endif

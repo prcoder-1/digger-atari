@@ -18,6 +18,7 @@
 #define SFX_H
 
 #include <stdint.h>
+#include "compat.h"
 
 /* Тембры POKEY: старшие биты AUDC задают тип искажения */
 #define SFX_TONE    0xA0u       /* чистый тон           */

@@ -47,14 +47,30 @@ extern uint8_t pmg_bmask;       /* враг: маска видимой част�
  * пропадает лишний байт и такт на каждом обращении - как у блиттера,
  * см. src/blit.h.
  */
+#ifdef __CC65__
 #pragma zpsym ("pmg_hpos")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("pmg_y")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("pmg_s0")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("pmg_s1")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("pmg_by")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("pmg_bs")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("pmg_bpl")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("pmg_bmask")
+#endif
 
 void pmg_init(void);
 

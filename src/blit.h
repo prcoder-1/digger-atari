@@ -23,11 +23,21 @@ extern uint8_t bl_w;
 extern uint8_t bl_h;
 extern const uint8_t *bl_src;
 
+#ifdef __CC65__
 #pragma zpsym ("bl_x")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("bl_y")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("bl_w")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("bl_h")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("bl_src")
+#endif
 
 void blit_mask(void);   /* с маской   */
 /* Только вырез по форме спрайта: экран = экран И маска, рисунок не выводится.
@@ -42,10 +52,18 @@ extern uint8_t cp_y;
 extern uint8_t cp_w;
 extern uint8_t cp_h;
 
+#ifdef __CC65__
 #pragma zpsym ("cp_x")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("cp_y")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("cp_w")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("cp_h")
+#endif
 
 void clear_px(void);
 

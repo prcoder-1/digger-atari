@@ -8,13 +8,19 @@
  * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
  * cc65 сюда не дотягивается, он чистит только сегмент BSS.
  */
+#ifdef __CC65__
 #pragma bss-name (push, "BSS_HI")
+#endif
 
 
 extern uint16_t sfx_f;
 extern uint8_t  sfx_c;
+#ifdef __CC65__
 #pragma zpsym ("sfx_f")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("sfx_c")
+#endif
 
 void pokey_init(void);
 void pokey_silence(void);
@@ -141,8 +147,12 @@ void sfx_tick(void)
  */
 extern uint8_t mus_base[2];
 extern uint8_t mus_egt[2];
+#ifdef __CC65__
 #pragma zpsym ("mus_base")
+#endif
+#ifdef __CC65__
 #pragma zpsym ("mus_egt")
+#endif
 
 void music_start(void);
 void music_stop(void);
@@ -195,4 +205,6 @@ void music_select(uint8_t bonus)
     music_start();
 }
 
+#ifdef __CC65__
 #pragma bss-name (pop)
+#endif

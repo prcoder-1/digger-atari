@@ -25,7 +25,9 @@
  * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
  * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
  */
+#ifdef __CC65__
 #pragma bss-name (push, "BSS_HI")
+#endif
 
 
 /*
@@ -467,4 +469,6 @@ void man_tick(dir_t want)
     man_draw();
 }
 
+#ifdef __CC65__
 #pragma bss-name (pop)
+#endif

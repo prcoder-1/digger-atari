@@ -39,7 +39,9 @@ extern const uint8_t spr_bf_p0[], spr_bf_p1[];
  * первого чтения, и добавлять сюда что-то, полагающееся на нулевое
  * начальное значение, нельзя.
  */
+#ifdef __CC65__
 #pragma bss-name (push, "BSS_HI")
+#endif
 /* Сама матрица лежит в отдельном сегменте, см. src/scrmem.s */
 extern uint16_t background[H_MAX][W_MAX];
 uint16_t coins[H_MAX];
@@ -48,7 +50,9 @@ uint8_t x_log_tbl[80];
 uint8_t x_rem_tbl[80];
 uint8_t y_log_tbl[SCR_LINES];
 uint8_t y_rem_tbl[SCR_LINES];
+#ifdef __CC65__
 #pragma bss-name (pop)
+#endif
 
 /*
  * Ход прокапывается ровно под спрайт, а не по всей клетке. В оригинале

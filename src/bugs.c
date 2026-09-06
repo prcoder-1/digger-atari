@@ -13,7 +13,9 @@
  * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
  * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
  */
+#ifdef __CC65__
 #pragma bss-name (push, "BSS_HI")
+#endif
 
 
 /*
@@ -511,4 +513,6 @@ uint8_t bugs_hit_man(void)
     return BUG_NO_HIT;
 }
 
+#ifdef __CC65__
 #pragma bss-name (pop)
+#endif
