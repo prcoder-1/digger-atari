@@ -32,6 +32,7 @@ typedef struct {
     uint8_t dir;
     uint8_t frame;
     uint8_t count;              /* тактов в текущем облике */
+    uint8_t _pad[1];            /* до 8 байт: индексация сдвигом, см. bags.h */
 } bug_t;
 
 /*
