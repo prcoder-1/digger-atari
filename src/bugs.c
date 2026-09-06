@@ -89,8 +89,7 @@ static uint8_t bug_touches_other(uint8_t i)
         const bug_t *o = &bugs[t];
         if (t == i || o->state != BUG_ALIVE)
             continue;
-        if ((uint8_t)(o->x - b->x + 3u) < 7u &&
-            (uint16_t)(o->y - b->y + 14u) < 29u)
+        if (near8(o->x, b->x, 3u) && near8(o->y, b->y, 14u))
             return 1;
     }
     return 0;
@@ -469,8 +468,7 @@ uint8_t bugs_hit_man(void)
             continue;
         /* Пересечение прямоугольников 8x15: обёрточное сравнение без знака,
          * как в порте на БК - int в cc65 шестнадцатибитный, приём работает. */
-        if ((uint8_t)(b->x - man.x + 3u) < 7u &&
-            (uint16_t)(b->y - man.y + 14u) < 29u)
+        if (near8(b->x, man.x, 3u) && near8(b->y, man.y, 14u))
             return i;
     }
     return BUG_NO_HIT;

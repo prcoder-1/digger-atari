@@ -222,8 +222,7 @@ static void bag_carve(const bag_t *b)
  */
 static uint8_t bag_covers(const bag_t *b, uint8_t x, uint8_t y)
 {
-    return (uint8_t)((uint8_t)(x - b->x + 3u) < 7u &&
-                     (uint16_t)(y - b->y + 14u) < 29u &&
+    return (uint8_t)(near8(b->x, x, 3u) && near8(b->y, y, 14u) &&
                      y >= b->y);
 }
 
@@ -266,24 +265,10 @@ uint8_t bags_blocked(uint8_t x_sub, uint8_t y)
         const bag_t *b = &bags[i];
         if (b->state != BAG_STANDING && b->state != BAG_LOOSE)
             continue;
-        if ((uint8_t)(b->x - x_sub + 3u) < 7u &&
-            (uint16_t)(b->y - y + 14u) < 29u)
+        if (near8(b->x, x_sub, 3u) && near8(b->y, y, 14u))
             return 1;
     }
     return 0;
-}
-
-/*
- * Держит ли Диггер мешок снизу. Пока он стоит прямо под мешком и ЛЕЗЕТ ВВЕРХ,
- * мешок не начинает раскачиваться: подкопал - и подпираешь его собой. Отпустил
- * или свернул - мешок пошёл. В оригинале это get_man_block, в порте на БК -
- * та же проверка по клетке снизу и направлению вверх.
- */
-static uint8_t man_holds(const bag_t *b)
-{
-    return (uint8_t)(man.dir == DIR_UP &&
-                     x_log_tbl[man.x] == x_log_tbl[b->x] &&
-                     y_log_tbl[man.y] == (uint8_t)(y_log_tbl[b->y] + 1u));
 }
 
 /* Ищет стоящий или качающийся мешок в клетке; 0xFF - мешка нет */
@@ -430,7 +415,7 @@ void bags_tick(void)
                     if (b->dir == DIR_LEFT || b->dir == DIR_RIGHT) {
                         b->state = BAG_FALLING;
                         b->fell = 0;
-                    } else if (!man_holds(b)) {
+                    } else {
                         b->state = BAG_LOOSE;
                         b->count = LOOSE_WAIT;
                     }

@@ -70,6 +70,9 @@ void field_gnaw(uint8_t dir, uint8_t x_sub, uint8_t y);
 /* Скруглённая шахта под падающим мешком: first - первый шаг падения */
 void field_gnaw_bag(uint8_t x_sub, uint8_t y, uint8_t first);
 
+/* |a - b| <= lim; писать это разностью со сдвигом нельзя, см. field.c */
+uint8_t near8(uint8_t a, uint8_t b, uint8_t lim);
+
 void clear_px_at(uint8_t x_px, uint8_t y, uint8_t w_px, uint8_t h);
 
 /* Забирает камень из клетки, если он там есть. Возвращает 1, если забрал. */
