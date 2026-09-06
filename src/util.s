@@ -5,12 +5,50 @@
 ; сворачивается в одно чтение регистра, после чего программа зависает.
 
         .export _wait_frame, _set_colbk
+        .export _clear_hi_bss
+        .import __BSS_HI_RUN__, __BSS_HI_SIZE__
+        .importzp ptr1
 
 VCOUNT  = $D40B                 ; счётчик строк ANTIC, считает строки парами
 COLBK   = $D01A                 ; цвет фона GTIA
 RTCLOK2 = $14                   ; младший байт счётчика кадров ОС
 
         .segment "CODE"
+
+; void clear_hi_bss(void) - обнулить сегмент BSS_HI.
+;
+; Туда уехала статика половины модулей: MAIN забит под завязку, а под ПЗУ по
+; $C000 простаивало три с лишним килобайта. Стартовый код cc65 этот сегмент не
+; чистит - он знает только про BSS, - а перенести туда весь BSS нельзя:
+; обнуление в библиотеке идёт РАНЬШЕ выключения ПЗУ, и запись по $C000 уходит
+; в ПЗУ впустую. Игра тогда не запускается совсем.
+;
+; На ассемблере, а не на Си, потому что символы линковщика __BSS_HI_RUN__ и
+; __BSS_HI_SIZE__ из Си не видны: cc65 приписывает именам подчёркивание, и
+; extern-объявление ищет ___BSS_HI_RUN__.
+_clear_hi_bss:
+        lda     #<__BSS_HI_RUN__
+        sta     ptr1
+        lda     #>__BSS_HI_RUN__
+        sta     ptr1+1
+        lda     #0
+        ldx     #>__BSS_HI_SIZE__       ; сначала целые страницы
+        beq     chb_tail
+chb_pg: ldy     #0
+chb_p1: sta     (ptr1),y
+        iny
+        bne     chb_p1
+        inc     ptr1+1
+        dex
+        bne     chb_pg
+chb_tail:
+        ldy     #<__BSS_HI_SIZE__       ; и остаток
+        beq     chb_end
+chb_t1: dey
+        sta     (ptr1),y
+        bne     chb_t1
+chb_end:
+        rts
 
 ; void wait_frame(void) - ждать смены кадра
 _wait_frame:

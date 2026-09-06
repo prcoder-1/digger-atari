@@ -69,6 +69,14 @@
 #include "game.h"
 #include "hw.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
+ * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 /* Вишенка: план для четырёх снарядов, порядок бит у них свой */
 extern const uint8_t pm_z1_0[];
 
@@ -360,3 +368,5 @@ void pmg_bonus_hide(uint8_t y)
     GTIA_HPOSM2 = 0;
     GTIA_HPOSM3 = 0;
 }
+
+#pragma bss-name (pop)

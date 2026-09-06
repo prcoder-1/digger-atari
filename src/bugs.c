@@ -2,10 +2,19 @@
  * bugs.c - враги.
  */
 #include "bugs.h"
+#include "bags.h"
 #include "field.h"
 #include "blit.h"
 #include "game.h"
 #include "pmgbug.h"
+
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
+ * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
 
 /*
  * Ноббин и Хоббин - разные существа и внешне. В исходниках оригинала
@@ -413,6 +422,10 @@ void bugs_tick(void)
             field_gnaw(b->dir, old_x, old_y);
         }
 
+        /* Враги тоже съедают золото: куча исчезает, но очков и звука не
+         * даётся - они в grab_money (Work/TB.C) только для Диггера. */
+        bags_bug_gold(x_log_tbl[b->x], y_log_tbl[b->y]);
+
         ++b->frame;
     }
 
@@ -473,3 +486,5 @@ uint8_t bugs_hit_man(void)
     }
     return BUG_NO_HIT;
 }
+
+#pragma bss-name (pop)

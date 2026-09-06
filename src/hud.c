@@ -14,6 +14,14 @@
 #include "text.h"
 #include "blit.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
+ * cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 extern const uint8_t spr_s0_p0[], spr_s0_p1[];  /* значок жизни, две фазы */
 
 extern uint8_t score[3];
@@ -90,3 +98,5 @@ void hud_lives(uint8_t n)
         blit_mask();
     }
 }
+
+#pragma bss-name (pop)

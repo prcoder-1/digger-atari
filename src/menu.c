@@ -16,6 +16,14 @@
 #include "hw.h"
 #include "text.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
+ * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 #define HS_COUNT  5u
 
 extern uint8_t score[3];
@@ -58,3 +66,5 @@ uint8_t menu_submit_score(void)
     return 0;
 }
 
+
+#pragma bss-name (pop)

@@ -10,6 +10,14 @@
 #include "sfx.h"
 
 /*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
+ * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
+/*
  * Спрайты летящего снаряда: в исходниках оригинала они подписаны
  * "traveling missile" и называются 15, k1 и k2. Группа f1..f5 - это
  * надгробные камни от большего к меньшему, а f9 - перевёрнутый грузовик;
@@ -73,7 +81,7 @@ void missile_init(uint8_t difficulty)
     mis.state = MIS_NONE;
     mis.reload = 0;
     mis_n_fired = mis_n_blocked = mis_n_offscreen = 0;
-#ifdef DEMO_MISSILE
+#if defined(DEMO_MISSILE) || defined(DEMO_SHOOT)
     /* Испытательная сборка: перезарядка укорочена, чтобы за один прогон
      * прошло много выстрелов и ветка попадания успела сработать. Сама
      * проверка попадания при этом не меняется. В игру это не входит. */
@@ -208,6 +216,9 @@ static uint8_t mis_can_pass(uint8_t sub, uint8_t y, uint8_t dir)
  * заодно засчитывали попадание во врага, стоящего на десяток строк НИЖЕ
  * снаряда, где никакого пересечения нет.
  *
+ * Перебираются ВСЕ враги, а не до первого: в оригинале маска столкновений
+ * разбирается по всем шести битам, и один выстрел кладёт всех, кого задел.
+ *
  * Убирает врага bugs_remove: она не только меняет состояние, но и СТИРАЕТ
  * его с поля. Раньше здесь состояние правилось руками, и убитый враг
  * оставался нарисованным до конца уровня - со стороны это выглядело так,
@@ -215,7 +226,7 @@ static uint8_t mis_can_pass(uint8_t sub, uint8_t y, uint8_t dir)
  */
 static uint8_t mis_hit_bug(void)
 {
-    uint8_t i;
+    uint8_t i, hit = 0;
     for (i = 0; i < MAX_BUGS; ++i) {
         const bug_t *b = &bugs[i];
         if (b->state != BUG_ALIVE)
@@ -226,12 +237,14 @@ static uint8_t mis_hit_bug(void)
                 < (uint8_t)(SPRITE_H + MIS_H - 1u)) {
             bugs_remove(i);
             score_add(BUG_SCORE);
-            sfx_play(75u, SFX_ROUGH, 12u, 3u);  /* взрыв */
-            hud_score();
-            return 1;
+            hit = 1;
         }
     }
-    return 0;
+    if (hit) {
+        sfx_play(75u, SFX_ROUGH, 12u, 3u);      /* взрыв */
+        hud_score();
+    }
+    return hit;
 }
 
 void missile_tick(void)
@@ -246,6 +259,7 @@ void missile_tick(void)
     case MIS_FLYING: {
         uint8_t nx = mis.x, lx = mis.x;
         uint8_t ny = mis.y, ly = mis.y;
+        uint8_t old_x, old_y;
         uint8_t blocked;
 
         /*
@@ -278,24 +292,29 @@ void missile_tick(void)
         blocked = (uint8_t)!mis_can_pass(lx, ly, mis.dir);
 
         /*
-         * В стену снаряд НЕ ВХОДИТ: упёршись, он остаётся на месте и там же
-         * взрывается. В оригинале то же самое сделано наоборот - шаг делается,
-         * а потом снаряд возвращают назад (mis_x -= 8 в move_missile,
-         * Work/TC.C). Результат один, а лишнего стирания земли нет: mis_erase
-         * гасит прямоугольник, и шагнув в целый грунт снаряд прогрызал бы в
-         * нём дырку.
+         * Шаг делается ВСЕГДА, даже в стену, и попадание проверяется уже на
+         * новом месте; только потом снаряд откатывают назад. Так в оригинале:
+         *
+         *      if(point_stat && !colision) { mis_explode=1; mis_x-=8; ... }
+         *
+         * то есть стена гасит выстрел лишь тогда, когда на шаге НИКОГО не
+         * задело (move_missile, Work/TC.C).
+         *
+         * Раньше шаг при упоре не делался вовсе, и попадание считалось по
+         * прежнему месту - на два подшага дальше от цели. Врага, стоящего в
+         * последней клетке хода, выстрел не брал; чаще всего это выходило с
+         * Хоббином, который лезет сквозь землю и передней половиной ещё в
+         * целом грунте.
+         *
+         * Откат нужен, чтобы взрыв не выел дырку в земле: mis_erase гасит
+         * прямоугольник по месту снаряда.
          */
         mis_erase();
-        if (!blocked) {
-            mis.x = nx;
-            mis.y = ny;
-        }
+        old_x = mis.x;
+        old_y = mis.y;
+        mis.x = nx;
+        mis.y = ny;
 
-        /*
-         * Попадание проверяется ДО стены: враг может стоять в последней
-         * клетке тоннеля, и тогда стена не должна его спасать. То же
-         * замечание есть в порте на БК.
-         */
         if (mis_hit_bug()) {
             mis.state = MIS_EXPLODING;
             mis.count = EXPLODE_TICKS;
@@ -303,6 +322,8 @@ void missile_tick(void)
             return;
         }
         if (blocked) {
+            mis.x = old_x;
+            mis.y = old_y;
             ++mis_n_blocked;
             goto fizzle;
         }
@@ -330,3 +351,5 @@ fizzle:
     mis.state = MIS_NONE;
     mis.reload = mis.reload_max;
 }
+
+#pragma bss-name (pop)

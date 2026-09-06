@@ -57,12 +57,16 @@ uint8_t bags_blocked(uint8_t x_sub, uint8_t y);
 /* Придавил ли падающий мешок Диггера */
 uint8_t bags_hit_man(void);
 
-void bags_init(uint8_t screen);
+/* difficulty задаёт, сколько лежит золото из разбитого мешка */
+void bags_init(uint8_t screen, uint8_t difficulty);
 void bags_tick(void);
 
 /* Пробует толкнуть мешок в клетке (x_log, y_log) в сторону dir.
  * Возвращает 1, если толкнуть удалось (или мешка там нет). */
 uint8_t bags_push(uint8_t x_log, uint8_t y_log, uint8_t dir);
+
+/* Враг съел золото: куча исчезает, очков и звука нет */
+void bags_bug_gold(uint8_t x_log, uint8_t y_log);
 
 /* Забирает золото из разбившегося мешка, +500 очков. 1 - забрал. */
 uint8_t bags_take_gold(uint8_t x_log, uint8_t y_log);

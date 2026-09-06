@@ -3,6 +3,14 @@
  */
 #include "sfx.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
+ * cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 extern uint16_t sfx_f;
 extern uint8_t  sfx_c;
 #pragma zpsym ("sfx_f")
@@ -186,3 +194,5 @@ void music_select(uint8_t bonus)
     mus_egt[1]  = (uint8_t)(eighth >> 8);
     music_start();
 }
+
+#pragma bss-name (pop)

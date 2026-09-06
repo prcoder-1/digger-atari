@@ -10,6 +10,14 @@
 #include "hud.h"
 #include "screen.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент game_clear_hi_bss() первым делом в main - стартовый
+ * код cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 extern const uint8_t spr_1_p0[],  spr_1_p1[];    /* стоит прямо           */
 extern const uint8_t spr_b4_p0[], spr_b4_p1[];   /* наклон влево          */
 extern const uint8_t spr_b5_p0[], spr_b5_p1[];   /* наклон вправо         */
@@ -25,6 +33,16 @@ bag_t bags[MAX_BAGS];
 #define BAG_FALL_STEP (2u * SUBSTEP_Y_LINES)    /* падает вдвое быстрее ходьбы */
 #define BREAK_TICKS   3u
 #define GOLD_SCORE    0x0500u                   /* 500 очков за золото */
+/*
+ * Сколько золото лежит, пока его не съели. В оригинале (init_tb, Work/TB.C)
+ * broke_max = 150 - сложность*10 тактов, и отсчёт там начинается с первого
+ * кадра разбивания, поэтому у нас из него вычитается BREAK_TICKS.
+ *
+ * Если под золотом ПУСТО, оно уходит быстро: оригинал в этом случае
+ * перескакивает счётчик на последние десять тактов. Смысл в том, что куча,
+ * лежащая на краю шахты, вот-вот провалится, и ждать её незачем.
+ */
+#define GOLD_QUICK    10u
 #define BAG_BUG_SCORE 0x0250u                   /* 250 очков за придавленного врага */
 
 /*
@@ -133,9 +151,14 @@ static void bag_erase(const bag_t *b)
     clear_px();
 }
 
-void bags_init(uint8_t screen)
+/* Сколько тактов живёт куча золота на этом уровне; см. GOLD_QUICK */
+static uint8_t gold_wait;
+
+void bags_init(uint8_t screen, uint8_t difficulty)
 {
     uint8_t x, y, n = 0;
+
+    gold_wait = (uint8_t)(150u - 10u * difficulty - BREAK_TICKS);
 
     for (x = 0; x < MAX_BAGS; ++x)
         bags[x].state = BAG_NONE;
@@ -487,11 +510,27 @@ void bags_tick(void)
         case BAG_BREAKING:
             if (--b->count == 0) {
                 b->state = BAG_GOLD;
-                b->count = 0;
+                b->count = gold_wait;
             }
             break;
 
         case BAG_GOLD:
+            /*
+             * Куча не лежит вечно: не съели - истлела. Перенос отсчёта
+             * BAG_BROKEN до broke_max из task_b (Work/TB.C).
+             */
+            if (b->count > GOLD_QUICK) {
+                uint8_t xl = x_log_tbl[b->x];
+                uint8_t yl = (uint8_t)(y_log_tbl[b->y] + 1u);
+
+                if (yl < H_MAX && (background[yl][xl] & BG_INTACT) == 0u)
+                    b->count = GOLD_QUICK;      /* под кучей пусто - уйдёт скоро */
+            }
+            if (--b->count == 0) {
+                bag_erase(b);
+                b->state = BAG_NONE;
+                continue;                       /* рисовать уже нечего */
+            }
             break;
 
         default:
@@ -499,6 +538,26 @@ void bags_tick(void)
         }
 
         bag_draw(b);
+    }
+}
+
+/*
+ * Золото съел ВРАГ. В оригинале это та же grab_money (Work/TB.C): куча
+ * исчезает, но очков и звука не даётся - они в ней только для Диггера
+ * (colision & 0x01), врагу достаётся лишь сброс задержки.
+ */
+void bags_bug_gold(uint8_t x_log, uint8_t y_log)
+{
+    uint8_t i;
+    for (i = 0; i < MAX_BAGS; ++i) {
+        bag_t *b = &bags[i];
+        if (b->state != BAG_GOLD)
+            continue;
+        if (x_log_tbl[b->x] != x_log || y_log_tbl[b->y] != y_log)
+            continue;
+        bag_erase(b);
+        b->state = BAG_NONE;
+        return;
     }
 }
 
@@ -520,3 +579,5 @@ uint8_t bags_take_gold(uint8_t x_log, uint8_t y_log)
     }
     return 0;
 }
+
+#pragma bss-name (pop)

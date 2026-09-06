@@ -16,6 +16,14 @@
 #include "screen.h"
 #include "blit.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
+ * cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 #define CHARSET_ROM  ((const uint8_t *)0xE000u)
 
 /* Внутренние коды Atari: цифры начинаются с $10, заглавные буквы с $21 */
@@ -95,3 +103,5 @@ void text_bcd6(uint8_t x_byte, uint8_t y, const uint8_t *bcd)
         x_byte += (uint8_t)(2u * FONT_W);
     }
 }
+
+#pragma bss-name (pop)

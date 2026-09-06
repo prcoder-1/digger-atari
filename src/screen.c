@@ -7,6 +7,14 @@
 #include "screen.h"
 #include "dli.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
+ * cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 /* Сами таблицы лежат в отдельном сегменте, см. src/scrmem.s */
 extern uint8_t screen_rowlo[SCR_LINES];
 extern uint8_t screen_rowhi[SCR_LINES];
@@ -225,3 +233,5 @@ void screen_done(void)
     OS_SDMCTL = saved_sdmctl;
     wait_frame();
 }
+
+#pragma bss-name (pop)

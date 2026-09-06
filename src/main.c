@@ -25,6 +25,14 @@
 #include "pmg.h"
 #include "pmgbug.h"
 
+/*
+ * Статические данные модуля уезжают в ОЗУ под ПЗУ: MAIN забит под завязку.
+ * Обнуляет этот сегмент clear_hi_bss() первым делом в main - стартовый код
+ * cc65 сюда не дотягивается, он чистит только сегмент BSS.
+ */
+#pragma bss-name (push, "BSS_HI")
+
+
 extern uint8_t score[3];
 
 /* Надгробие: в исходниках оригинала f1 - самый большой камень, f5 - самый
@@ -323,6 +331,9 @@ static dir_t key_dir(void)
 
 #endif /* !DIGGER_DEMO */
 
+/* Обнуление сегмента BSS_HI, см. src/util.s */
+void clear_hi_bss(void);
+
 int main(void)
 {
     uint8_t next;
@@ -332,6 +343,18 @@ int main(void)
     uint8_t crushed;
     uint8_t rip_shown = 0xFF;
     dir_t want, kd;
+
+    /*
+     * Обнуление ОЗУ под ПЗУ - ПЕРВЫМ делом. Туда уехала статика половины
+     * модулей (MAIN забит под завязку), а стартовый код cc65 чистит только
+     * сегмент BSS: сегмент BSS_HI лежит по $C000, и в тот момент по этому
+     * адресу ещё ПЗУ, запись уходит впустую. Отсюда и правило: пока
+     * обнуления не было, ни одна переменная из BSS_HI не читается.
+     *
+     * Раньше этого не требовалось - там лежали только таблицы, которые
+     * field_init заполняет целиком, - и в шапке field.c про это сказано.
+     */
+    clear_hi_bss();
 
     /*
      * Раньше screen_init: тот включает выборку игроков в DMACTL, и к этому
@@ -365,7 +388,7 @@ int main(void)
     screen_clear(0);
     field_init(0);
     man_init();
-    bags_init(0);
+    bags_init(0, 1);
     bugs_init(0, 1);
     missile_init(1);
     music_select(0);
@@ -587,7 +610,7 @@ int main(void)
                 /* Мешки перезаводятся вместе с полем: без этого на новый
                  * уровень переезжало их состояние с прошлого - падающие
                  * продолжали падать, а разбитые оставались золотом. */
-                bags_init(screen);
+                bags_init(screen, game_level > 10u ? 10u : game_level);
                 bugs_init(screen, game_level > 10u ? 10u : game_level);
                 pmg_bonus_hide(CHERRY_Y);
                 bonus_state = BONUS_OFF;
@@ -699,3 +722,5 @@ int main(void)
 #endif
     }
 }
+
+#pragma bss-name (pop)
