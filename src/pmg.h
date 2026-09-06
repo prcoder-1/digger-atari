@@ -57,6 +57,11 @@ extern uint8_t pmg_bmask;       /* враг: маска видимой част�
 #pragma zpsym ("pmg_bmask")
 
 void pmg_init(void);
+
+/* Снимает с экрана ВСЮ спрайтовую графику. Зовётся при смене уровня: заливка
+ * Диггера иначе переезжает на новый уровень, см. src/pmg.s */
+void pmg_clear(void);
+
 void pmg_show(void);
 void pmg_hide(void);
 
