@@ -37,6 +37,9 @@ SEGMENTS = {
     'SHADOW_RAM2': '.section .romdata2,"a",@progbits',
     # Области, которые только резервируют адреса и ничем не заполняются.
     'ZEROPAGE':   '.section .zp.bss,"aw",@nobits',
+    # Отдельного BSS_HI у llvm-mos нет: места хватает, всё идёт в обычную .bss,
+    # которую стартовый код чистит сам.
+    'BSS_HI':     '.section .bss,"aw",@nobits',
     'SCRBUF':     '.section .scrbuf,"aw",@nobits',
     'DLIST':      '.section .dlist,"aw",@nobits',
     'ROWTAB':     '.section .rowtab,"aw",@nobits',

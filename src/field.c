@@ -50,9 +50,12 @@ uint8_t x_log_tbl[80];
 uint8_t x_rem_tbl[80];
 uint8_t y_log_tbl[SCR_LINES];
 uint8_t y_rem_tbl[SCR_LINES];
-#ifdef __CC65__
-#pragma bss-name (pop)
-#endif
+/*
+ * Рамка НЕ закрывается здесь, а тянется до конца файла. С флагом -Cl локальные
+ * переменные становятся статическими и тоже попадают в BSS, а MAIN упирается в
+ * потолок: у field.c таких набирается три десятка байт. Остальные модули
+ * обёрнуты целиком по той же причине.
+ */
 
 /*
  * Ход прокапывается ровно под спрайт, а не по всей клетке. В оригинале
@@ -402,3 +405,6 @@ void field_init(uint8_t screen)
 
     field_redraw(screen);
 }
+#ifdef __CC65__
+#pragma bss-name (pop)
+#endif

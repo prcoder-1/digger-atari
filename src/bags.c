@@ -177,6 +177,7 @@ void bags_init(uint8_t screen, uint8_t difficulty)
             bags[n].dir = DIR_STOP;
             bags[n].count = 0;
             bags[n].fell = 0;
+            bags[n].drop = 0;
             ++n;
         }
     }
@@ -201,6 +202,36 @@ static uint8_t man_blocks(uint8_t xl, uint8_t yl)
         return 0;
     my = y_log_tbl[man.y];
     return (uint8_t)(my == yl || (uint8_t)(my + 1u) == yl);
+}
+
+/*
+ * Мешок приземлился. Разбивается он, только если пролетел БОЛЬШЕ ОДНОГО этажа -
+ * правило дословно совпадает в обоих источниках:
+ *
+ *   оригинал, stop_bag (Work/TB.C):
+ *       if(BAG_DIR==DOWN && BAG_BRAKABLE>1) BAG_BROKEN=1;
+ *       else                                BAG_BRAKABLE=0;
+ *
+ *   порт на БК, stop_bag:
+ *       bag->state = (bag->count > 1) ? BAG_BREAKS : BAG_STATIONARY;
+ *
+ * Раньше здесь стояло b->fell, а тот считает ТАКТЫ и ненулевой после первого
+ * же шага - разбивался любой упавший мешок, даже свалившийся на одну клетку.
+ *
+ * Счётчик этажей обнуляется на посадке без поломки, как BAG_BRAKABLE в
+ * оригинале: мешок, которого потом столкнут снова, начинает счёт заново.
+ */
+static void bag_land(bag_t *b)
+{
+    if (b->drop > 1u) {
+        b->state = BAG_BREAKING;
+        sfx_play(750u, SFX_THUD, 12u, 2u);   /* глухой удар */
+        screen_shake();                      /* и поле подпрыгивает */
+    } else {
+        b->state = BAG_STANDING;
+        b->drop = 0;
+    }
+    b->count = BREAK_TICKS;
 }
 
 /* Есть ли опора под мешком: клетка снизу должна быть целиком нетронута */
@@ -440,6 +471,7 @@ void bags_tick(void)
                     if (b->dir == DIR_LEFT || b->dir == DIR_RIGHT) {
                         b->state = BAG_FALLING;
                         b->fell = 0;
+                        b->drop = 0;
                     } else {
                         b->state = BAG_LOOSE;
                         b->count = LOOSE_WAIT;
@@ -461,6 +493,7 @@ void bags_tick(void)
             } else if (--b->count == 0) {
                 b->state = BAG_FALLING;
                 b->fell = 0;
+                b->drop = 0;
             }
             break;
 
@@ -490,22 +523,25 @@ void bags_tick(void)
             sfx_play((uint16_t)(32u + b->fell * 4u), SFX_TONE, 8u, 1u);
             if (b->fell < 40u)
                 ++b->fell;
+            /*
+             * Каждая пройденная граница клетки - это ЭТАЖ. Считается он здесь,
+             * после сдвига: у нас мешок сначала переходит в BAG_FALLING и
+             * только СЛЕДУЮЩИМ тактом делает первый шаг, поэтому граница, с
+             * которой он стартовал, в счёт не идёт - ровно как в оригинале,
+             * где увеличение стоит в ветке DOWN, а старт падения приходится на
+             * ветку STOP.
+             */
+            if (y_rem_tbl[b->y] == 0 && b->drop < 40u)
+                ++b->drop;
+
             /* Падение останавливается только на границе клетки и только
              * если под мешком снова целая земля - как в оригинале. */
             if (y_rem_tbl[b->y] == 0 && supported(b)) {
-                b->state = b->fell ? BAG_BREAKING : BAG_STANDING;
-                if (b->fell) {
-                    sfx_play(750u, SFX_THUD, 12u, 2u);   /* глухой удар */
-                    screen_shake();                      /* и поле подпрыгивает */
-                }
-                b->count = BREAK_TICKS;
+                bag_land(b);
             }
             if (b->y >= (FIELD_Y_OFFSET + (H_MAX - 1u) * CELL_H_PX)) {
                 b->y = (uint8_t)(FIELD_Y_OFFSET + (H_MAX - 1u) * CELL_H_PX);
-                b->state = BAG_BREAKING;
-                b->count = BREAK_TICKS;
-                sfx_play(750u, SFX_THUD, 12u, 2u);
-                screen_shake();         /* удар о дно поля тоже трясёт */
+                bag_land(b);            /* дно поля - такая же посадка */
             }
             break;
 

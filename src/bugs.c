@@ -274,6 +274,25 @@ static void bug_spawn(void)
 
     if (bugs_total == 0)
         return;
+
+    /*
+     * В БОНУС-РЕЖИМЕ враги не рождаются. Условие из оригинала (task_a,
+     * Work/TA.C):
+     *
+     *     if(bugs_created<bugs_total && bugs_count()<bugs_max
+     *        && get_m_status() && (!get_bonus()) )
+     *             start_bug();
+     *
+     * Запас при этом всё равно ПОПОЛНЯЕТСЯ: era_bug в бонусе делает
+     * bugs_total++, и съеденные возвращаются в очередь на рождение. Просто
+     * тратится эта очередь уже после бонуса - иначе поле пополнялось бы
+     * ровно тогда, когда Диггер их ест.
+     *
+     * bugs_fleeing поднят ровно на бонус-режим и служит здесь признаком
+     * get_bonus() - так же, как в bugs_remove.
+     */
+    if (bugs_fleeing)
+        return;
     for (i = 0; i < MAX_BUGS; ++i) {
         if (bugs[i].state != BUG_NONE)
             continue;
