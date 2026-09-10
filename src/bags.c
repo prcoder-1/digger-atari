@@ -544,23 +544,62 @@ void bags_tick(void)
 }
 
 /*
- * Золото съел ВРАГ. В оригинале это та же grab_money (Work/TB.C): куча
- * исчезает, но очков и звука не даётся - они в ней только для Диггера
- * (colision & 0x01), врагу достаётся лишь сброс задержки.
+ * Мешок, которого КАСАЕТСЯ точка (подшаг, строка); 0xFF - никакого. Геометрия
+ * та же, что у bags_blocked: и оригинал, и порт на БК проверяют врага с мешком
+ * пересечением габаритов (check_collision_4_15), а не совпадением клеток.
  */
-void bags_bug_gold(uint8_t x_log, uint8_t y_log)
+static uint8_t bag_touching(uint8_t x_sub, uint8_t y, uint8_t gold_too)
 {
     uint8_t i;
     for (i = 0; i < MAX_BAGS; ++i) {
-        bag_t *b = &bags[i];
-        if (b->state != BAG_GOLD)
+        const bag_t *b = &bags[i];
+        if (b->state != BAG_STANDING && b->state != BAG_LOOSE &&
+            !(gold_too && b->state == BAG_GOLD))
             continue;
-        if (x_log_tbl[b->x] != x_log || y_log_tbl[b->y] != y_log)
-            continue;
-        bag_erase(b);
-        b->state = BAG_NONE;
-        return;
+        if (near8(b->x, x_sub, 3u) && near8(b->y, y, 14u))
+            return i;
     }
+    return 0xFFu;
+}
+
+/*
+ * Ноббин упёрся в мешок. Возвращает 1, если идти можно.
+ *
+ * Перенос обеих ссылок разом. В оригинале (TA.C) у врага та же развилка, что у
+ * Диггера: вбок он мешок ТОЛКАЕТ (move_all_bags), вверх и вниз - нет, и тогда
+ * ход отменяется. В порте на БК то же самое, там это move_bag(bag, dir) под
+ * условием "(dir == UP) || (dir == DOWN) || !move_bag(...)".
+ */
+uint8_t bags_bug_push(uint8_t x_sub, uint8_t y, uint8_t dir)
+{
+    uint8_t i = bag_touching(x_sub, y, 0);
+
+    if (i == 0xFFu)
+        return 1;                       /* мешка нет - путь свободен */
+    if (dir != DIR_LEFT && dir != DIR_RIGHT)
+        return 0;                       /* сверху и снизу мешок не сдвинуть */
+    return bags_push(x_log_tbl[bags[i].x], y_log_tbl[bags[i].y], dir);
+}
+
+/*
+ * Хоббин СЪЕДАЕТ мешок, которого коснулся. В оригинале это break_bags
+ * (Work/TB.C) - там мешок просто стирается, без золота и без очков; вызывается
+ * он, когда грызущий враг застрял у мешка дольше такта. Порт на БК проще:
+ * Хоббин ест при первом же касании, и разницы на экране нет.
+ *
+ * gold_too здесь всегда: Ноббину золото тоже достаётся, только он на этом
+ * задерживается, а мешок его не пускает.
+ */
+void bags_bug_eat(uint8_t x_sub, uint8_t y, uint8_t any)
+{
+    uint8_t i = bag_touching(x_sub, y, 1);
+
+    if (i == 0xFFu)
+        return;
+    if (!any && bags[i].state != BAG_GOLD)
+        return;                         /* Ноббину - только золото */
+    bag_erase(&bags[i]);
+    bags[i].state = BAG_NONE;
 }
 
 /* Забирает золото из клетки, если оно там лежит */

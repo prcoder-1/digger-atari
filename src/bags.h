@@ -73,8 +73,11 @@ void bags_tick(void);
  * Возвращает 1, если толкнуть удалось (или мешка там нет). */
 uint8_t bags_push(uint8_t x_log, uint8_t y_log, uint8_t dir);
 
-/* Враг съел золото: куча исчезает, очков и звука нет */
-void bags_bug_gold(uint8_t x_log, uint8_t y_log);
+/* Ноббин упёрся в мешок: вбок толкает, вверх-вниз нет. 1 - идти можно. */
+uint8_t bags_bug_push(uint8_t x_sub, uint8_t y, uint8_t dir);
+
+/* Враг съел мешок. any=1 - Хоббин, ест любой; any=0 - Ноббину только золото. */
+void bags_bug_eat(uint8_t x_sub, uint8_t y, uint8_t any);
 
 /* Забирает золото из разбившегося мешка, +500 очков. 1 - забрал. */
 uint8_t bags_take_gold(uint8_t x_log, uint8_t y_log);
