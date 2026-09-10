@@ -39,6 +39,8 @@ extern uint8_t pmg_by;          /* враг: строка растра          
 extern const uint8_t *pmg_bs;   /* враг: данные плана             */
 extern uint8_t pmg_bpl;         /* враг: область игрока, 6 или 7  */
 extern uint8_t pmg_bmask;       /* враг: маска видимой части      */
+extern uint8_t pmg_blo;         /* враг: первая строка плана      */
+extern uint8_t pmg_bhi;         /* враг: последняя строка плана   */
 
 /*
  * Все они лежат в нулевой странице (сегмент ZEROPAGE в src/pmg.s), и об этом
@@ -70,6 +72,8 @@ extern uint8_t pmg_bmask;       /* враг: маска видимой част�
 #endif
 #ifdef __CC65__
 #pragma zpsym ("pmg_bmask")
+#pragma zpsym ("pmg_blo")
+#pragma zpsym ("pmg_bhi")
 #endif
 
 void pmg_init(void);

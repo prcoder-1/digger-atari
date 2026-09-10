@@ -115,7 +115,12 @@ static const uint8_t clip_tbl[2u * SPRITE_W_SUB - 1u] = {
  * каждого - они могут шагнуть навстречу уже после раздачи. Итого 30, взято 32
  * с запасом.
  */
+#ifndef BUG_GAP                 /* переопределяется в опытах со сборкой */
 #define BUG_GAP     32u
+#endif
+
+
+
 
 /* Кому какой игрок назначен: 0 - без цвета */
 static uint8_t bug_pl[MAX_BUGS];
@@ -188,6 +193,7 @@ void pmg_bugs_assign(void)
         last_y[p] = best_y;
         bug_pl[best] = bug_player[p];
     }
+
 }
 
 /*
@@ -218,6 +224,10 @@ void pmg_bug_hide(uint8_t i)
     pmg_by = drawn_y[i];
     pmg_bpl = drawn_pl[i];
     pmg_bmask = 0xFFu;
+    /* Стирается ВСЕГДА вся высота, даже если заливку выводили обрезанной по
+     * строкам: лишнее гашение безвредно, а недостёртое - это призрак. */
+    pmg_blo = 0;
+    pmg_bhi = SPRITE_H - 1u;
     pmg_bs = pm_blank;
     pmg_bug_put();
     drawn_pl[i] = 0;
@@ -240,6 +250,7 @@ void pmg_bug_show(uint8_t i)
     uint8_t p = bug_pl[i];
     uint8_t look, g, j, last, hpos;
     uint8_t clip = 0xFFu;
+    uint8_t lo = 0, hi = SPRITE_H - 1u;  /* какие строки заливки остаются */
     uint8_t *tab;
 
     if (!p)
@@ -273,9 +284,36 @@ void pmg_bug_show(uint8_t i)
         d = (uint8_t)(o->x - b->x + SPRITE_W_SUB - 1u);
         if (d > 2u * SPRITE_W_SUB - 2u)
             continue;                   /* по ширине не пересекаются */
+        /*
+         * Сосед в ТОМ ЖЕ столбце - это очередь: враги идут гуськом по
+         * коридору, один над другим. Маска обрезки горизонтальная, и на такого
+         * соседа она даёт ноль (середина clip_tbl), то есть гасила заливку
+         * ЦЕЛИКОМ. А закрыты на деле только перекрывшиеся строки - сосед стоит
+         * выше или ниже и стирает своей маской лишь их. Из-за этого в очереди
+         * цвет доставался последнему, а все передние шли в цвете поля; ровно
+         * это и видно в игре.
+         *
+         * Поэтому здесь обрезка идёт ПО СТРОКАМ: вывод плана ограничивается
+         * диапазоном lo..hi, см. _pmg_bug_put в src/pmg.s.
+         */
+        if (o->x == b->x) {
+            if (o->y > b->y) {          /* сосед ниже - закрывает низ */
+                uint8_t k = (uint8_t)(o->y - b->y - 1u);
+                if (k < hi)
+                    hi = k;
+            } else if (o->y < b->y) {   /* сосед выше - закрывает верх */
+                uint8_t k = (uint8_t)(SPRITE_H - (b->y - o->y));
+                if (k > lo)
+                    lo = k;
+            } else {
+                return;                 /* ровно друг на друге - закрыт весь */
+            }
+            continue;
+        }
+
         clip &= clip_tbl[d];
     }
-    if (!clip)
+    if (!clip || lo > hi)
         return;                         /* закрыт целиком - цвета нет */
 
     /* Облик выбирается как в bug_draw: у Хоббина своя графика на сторону */
@@ -289,6 +327,8 @@ void pmg_bug_show(uint8_t i)
     pmg_by = b->y;
     pmg_bpl = p;
     pmg_bmask = clip;
+    pmg_blo = lo;
+    pmg_bhi = hi;
     pmg_bs = bug_pm[look][b->frame % 3u];
     pmg_bug_put();
 
@@ -348,6 +388,8 @@ void pmg_bonus_show(uint8_t x_sub, uint8_t y)
     pmg_by = y;
     pmg_bpl = PMG_PL_MISSILES;
     pmg_bmask = 0xFFu;
+    pmg_blo = 0;
+    pmg_bhi = SPRITE_H - 1u;
     pmg_bs = pm_z1_0;
     pmg_bug_put();
 
@@ -362,6 +404,8 @@ void pmg_bonus_hide(uint8_t y)
     pmg_by = y;
     pmg_bpl = PMG_PL_MISSILES;
     pmg_bmask = 0xFFu;
+    pmg_blo = 0;
+    pmg_bhi = SPRITE_H - 1u;
     pmg_bs = pm_blank;
     pmg_bug_put();
 
