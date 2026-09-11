@@ -38,7 +38,7 @@ LDFLAGS   := -C $(CFG) -m $(MAP) -Ln $(LBL)
 
 # Демо-сборка добавляет к игре маршруты и телеметрию - около килобайта, - и
 # MAIN от этого переполняется. Стек Си ей режется вдвое: замеренный максимум
-# кадра 11 байт, рекурсии в порте нет, так что 192 байта - это полтора десятка
+# кадра 11 байт, рекурсии в порте нет, так что 176 байт - это полтора десятка
 # вложенных вызовов с запасом. Релизной сборки это не касается, там $0200.
 
 
@@ -109,7 +109,7 @@ all: $(XEX)
 # нельзя. В релиз не входит.
 demo:
 	$(MAKE) BUILD=build-demo CFLAGS="$(CFLAGS) -DDIGGER_DEMO" \
-	        LDFLAGS="-C $(CFG) -m build-demo/digger.map -Ln build-demo/digger.lbl -D__STACKSIZE__=192" all
+	        LDFLAGS="-C $(CFG) -m build-demo/digger.map -Ln build-demo/digger.lbl -D__STACKSIZE__=176" all
 	@echo "демо-сборка: build-demo/digger.xex"
 
 # Замер звука: пересобирает демо-сборку и разбирает дамп регистров POKEY.

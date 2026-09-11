@@ -31,7 +31,6 @@ extern uint8_t score[3];
 #define SCORE_X     1u                  /* байт экрана */
 #define SCORE_Y     2u
 #define LIVES_Y     2u
-#define MAX_LIVES   6u
 
 /*
  * Значки жизней стоят через 20 точек - как в оригинале (print_lives в

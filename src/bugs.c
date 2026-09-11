@@ -297,7 +297,14 @@ static void bug_spawn(void)
         if (bugs[i].state != BUG_NONE)
             continue;
         bugs[i].state = BUG_ALIVE;
+#ifdef DEMO_ALLHOB
+        /* Испытательная фикстура: все враги грызущие с рождения. Иначе Хоббин
+         * появляется, только когда Ноббин застрянет, и до камня он за прогон
+         * может не дойти ни разу. В игру не входит. */
+        bugs[i].kind = BUG_HOBBIN;
+#else
         bugs[i].kind = BUG_NOBBIN;
+#endif
         bugs[i].x = (uint8_t)(FIELD_X_OFFSET + nest_x * POS_X_STEP);
         bugs[i].y = (uint8_t)(FIELD_Y_OFFSET + nest_y * CELL_H_PX);
         bugs[i].dir = DIR_LEFT;
@@ -489,6 +496,23 @@ void bugs_tick(void)
                 background[yl][xl] &= (uint16_t)~BG_VERT_ALL;
             if ((background[yl][xl] & (BG_HORIZ_ALL | BG_VERT_ALL)) == 0u)
                 background[yl][xl] &= (uint16_t)~BG_INTACT;
+
+            /*
+             * Камень на пути Хоббина УНИЧТОЖАЕТСЯ. Без этого он пропадал с
+             * экрана (его затирает clear_px выше), но оставался в матрице
+             * camней - и уровень не кончался никогда: поле пустое, а
+             * field_coins_left() по-прежнему говорит "есть".
+             *
+             * В оригинале это отдельный вызов у грызущего врага (task_a,
+             * Work/TA.C):
+             *
+             *     if(BUG_TYPE==ADVANCING)
+             *         coin_check(...);     // remove any coin in the path
+             *
+             * Возврат там тоже не используется: очков и звука врагу не
+             * полагается, они только у Диггера.
+             */
+            field_take_coin(xl, yl);
             /* Торец прогрызенного хода закругляется так же, как у Диггера */
             field_gnaw(b->dir, old_x, old_y);
         }
