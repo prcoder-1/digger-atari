@@ -131,12 +131,23 @@ def main():
               % (100.0 * frac / 5.0))
 
     # Мелодия и бас - одиночные каналы
+    #
+    # СМЕНА ДЕЛИТЕЛЯ НА ЕДИНИЦУ - ЭТО НЕ НОВАЯ НОТА, А ВИБРАТО. Мелодия качает
+    # делитель на +-1 раз в кадр (см. mus_out в src/music.s), и без этой
+    # оговорки каждая нота разваливалась на десяток "нот", а темп читался как
+    # два кадра вместо девяти. Настоящая смена ноты - прыжок больше единицы.
+    VIB = 1
+
+    def is_start(i, af, ac):
+        if not (rows[i][ac] & 0x0F):
+            return False
+        if not (rows[i - 1][ac] & 0x0F):
+            return True
+        return abs(rows[i][af] - rows[i - 1][af]) > VIB
+
     for name, af, ac in (('мелодия (канал 3)', AUDF3, AUDC3),
                          ('бас (канал 4)', AUDF4, AUDC4)):
-        notes = sum(1 for i in range(1, len(rows))
-                    if (rows[i][ac] & 0x0F) and
-                    (not (rows[i - 1][ac] & 0x0F) or
-                     rows[i][af] != rows[i - 1][af]))
+        notes = sum(1 for i in range(1, len(rows)) if is_start(i, af, ac))
         print()
         print('=== %s: %d нот ===' % (name, notes))
         if notes:
@@ -146,10 +157,7 @@ def main():
             # при уже звучащем канале. Считать только по громкости нельзя:
             # проигрыватель не гасит канал между нотами, и подряд идущие ноты
             # слились бы в одну.
-            starts = [i for i in range(1, len(rows))
-                      if (rows[i][ac] & 0x0F) and
-                      (not (rows[i - 1][ac] & 0x0F) or
-                       rows[i][af] != rows[i - 1][af])]
+            starts = [i for i in range(1, len(rows)) if is_start(i, af, ac)]
             for i in starts[:6]:
                 print('  замер %5d  AUDF=%-4d %7.1f Гц'
                       % (i, rows[i][af], freq_single(rows[i][af])))
@@ -160,6 +168,18 @@ def main():
                       % ', '.join('%.1f' % g for g in gaps[:10]))
                 print('  ожидается: восьмая 9.1, четверть 18.2, '
                       'пять восьмых 45.4 кадра')
+
+            # Глубина и скорость вибрато - внутри одной ноты
+            if len(starts) > 1:
+                a0, a1 = starts[0], starts[1]
+                seg = [rows[i][af] for i in range(a0, a1)]
+                base = max(set(seg), key=seg.count)
+                dev = max(abs(v - base) for v in seg)
+                flips = sum(1 for i in range(1, len(seg))
+                            if seg[i] != seg[i - 1])
+                print('  вибрато: делитель %d, отклонение +-%d, '
+                      'переключений за ноту %d'
+                      % (base, dev, flips))
     return 0
 
 
