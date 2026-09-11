@@ -193,10 +193,18 @@ void music_select(uint8_t bonus)
     const uint8_t *p = bonus ? music_bonus : music_popcorn;
     uint16_t eighth = bonus ? 0x048Au : 0x0915u;
 
+    /*
+     * Уровни удержания опущены в той же пропорции, что и потолок громкости в
+     * music.s (15 -> 10, то есть две трети): иначе музыка стала бы тише только
+     * на атаке, а тянущаяся часть ноты осталась бы прежней громкости.
+     *
+     *      бонус    6.00 -> 4.00
+     *      обычная  2.40 -> 1.60
+     */
     if (bonus)
-        music_shape(0x03F6u, 0x0600u, 0x01FBu, 0x00CBu, 8u);
+        music_shape(0x03F6u, 0x0400u, 0x01FBu, 0x00CBu, 8u);
     else
-        music_shape(0x09E7u, 0x0266u, 0x02F8u, 0x0033u, 18u);
+        music_shape(0x09E7u, 0x0199u, 0x02F8u, 0x0033u, 18u);
 
     mus_base[0] = (uint8_t)(uint16_t)p;
     mus_base[1] = (uint8_t)(((uint16_t)p) >> 8);

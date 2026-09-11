@@ -169,17 +169,21 @@ def main():
                 print('  ожидается: восьмая 9.1, четверть 18.2, '
                       'пять восьмых 45.4 кадра')
 
-            # Глубина и скорость вибрато - внутри одной ноты
+            # Глубина и скорость вибрато - внутри одной ноты.
+            #
+            # Размах берётся как min..max, а не как отклонение от самого
+            # частого значения: при чётном треугольнике частых значений два,
+            # выбор между ними произволен, и глубина читалась то +-1, то +-2.
             if len(starts) > 1:
                 a0, a1 = starts[0], starts[1]
                 seg = [rows[i][af] for i in range(a0, a1)]
-                base = max(set(seg), key=seg.count)
-                dev = max(abs(v - base) for v in seg)
                 flips = sum(1 for i in range(1, len(seg))
                             if seg[i] != seg[i - 1])
-                print('  вибрато: делитель %d, отклонение +-%d, '
+                vol = [rows[i][ac] & 0x0F for i in range(a0, a1)]
+                print('  вибрато: делитель %d..%d (размах %d), '
                       'переключений за ноту %d'
-                      % (base, dev, flips))
+                      % (min(seg), max(seg), max(seg) - min(seg), flips))
+                print('  громкость ноты: %d..%d' % (min(vol), max(vol)))
     return 0
 
 
