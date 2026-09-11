@@ -56,9 +56,16 @@ CONSTS = {
 }
 
 RENAME = {
-    'ptr1': 'mos_ptr',                  # рабочий указатель, свой (см. mos/init.S)
+    'ptr1': 'mos_ptr',                  # рабочие указатели, свои (см. mos/init.S)
+    'ptr2': 'mos_ptr2',
     '__BSS_HI_RUN__':  '__bss_hi_start',
     '__BSS_HI_SIZE__': '__bss_hi_size',
+    # Перенос карт уровней под ПЗУ нужен только cc65: у llvm-mos места хватает,
+    # и карты лежат там, где слинкованы. Символы объявлены в mos/link.ld
+    # нулевыми, и copy_levels становится пустым циклом.
+    '__LEVELS_LOAD__': '__levels_load',
+    '__LEVELS_RUN__':  '__levels_start',
+    '__LEVELS_SIZE__': '__levels_size',
 }
 
 KNOWN = {'.byte', '.word', '.addr', '.res', '.export', '.import', '.importzp',
@@ -205,9 +212,12 @@ def main():
     if len(sys.argv) != 3:
         raise SystemExit(__doc__)
     src = open(sys.argv[1], encoding='utf-8').read()
-    open(sys.argv[2], 'w', encoding='utf-8').write(
-        '; СГЕНЕРИРОВАНО tools/ca65_to_mos.py из %s - не править вручную.\n'
-        % sys.argv[1] + translate(src))
+    # Перевод СНАЧАЛА, запись потом. Иначе open(..., 'w') успевает обрезать файл
+    # до нуля, а падение переводчика оставляет пустышку, которая преспокойно
+    # ассемблируется - и поломка вылезает уже на запуске.
+    out = ('; СГЕНЕРИРОВАНО tools/ca65_to_mos.py из %s - не править вручную.\n'
+           % sys.argv[1] + translate(src))
+    open(sys.argv[2], 'w', encoding='utf-8').write(out)
 
 
 if __name__ == '__main__':

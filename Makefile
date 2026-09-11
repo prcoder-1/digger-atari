@@ -61,6 +61,13 @@ EMU       := atari800
 # поднял бы RAM_SIZE=576 и скрыл бы выход за пределы памяти.
 EMUFLAGS  := -pal -nobasic
 
+# Цель по умолчанию задана ЯВНО. Без этой строки ею становится первое же
+# правило в файле, а блок сборки llvm-mos стоит выше all - и "make" без
+# аргументов молча собирал пустой каталог build-mos вместо игры. Релизный
+# digger.xex при этом не пересобирался вовсе, а проверки "make && ..."
+# выглядели успешными.
+.DEFAULT_GOAL := all
+
 .PHONY: all clean run run130 size atr demo play sound mos mos-demo
 
 # ---------------------------------------------------------------------------
@@ -80,7 +87,11 @@ MOSSDK    ?= $(HOME)/ATARI/llvm-mos-sdk/install
 MOSBUILD  := build-mos
 MOSFLAGS  := --config $(MOSSDK)/bin/mos-atari8.cfg -Oz --std=c99 -I src \
              -Wno-unknown-pragmas
-MOSASM    := $(patsubst src/%.s,$(MOSBUILD)/%.S,$(ASRC)) \
+# Заголовок куска XEX с картами уровней - принадлежность cc65: там карты
+# переносятся под ПЗУ отдельным куском файла. У llvm-mos своя раскладка, и
+# перевод этого файла бессмысленен.
+MOSSKIP   := src/lvlhdr.s
+MOSASM    := $(patsubst src/%.s,$(MOSBUILD)/%.S,$(filter-out $(MOSSKIP),$(ASRC))) \
              $(patsubst assets/%.s,$(MOSBUILD)/a_%.S,$(GSRC))
 
 $(MOSBUILD):

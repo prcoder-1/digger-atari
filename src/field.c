@@ -284,6 +284,23 @@ static void draw_at(uint8_t x_graph, uint8_t y, uint8_t h,
     blit_mask();
 }
 
+/*
+ * Рисует камень клетки заново, если он ещё цел.
+ *
+ * Нужен потому, что Диггер откусывает край камня РАНЬШЕ, чем доходит до точки
+ * забора: прокопка идёт впереди его origin. В оригинале ровно для этого стоит
+ * put_coin - "redraw coin to cover bite taken by man" (coin_check, Work/TD.C),
+ * на такт раньше, чем камень забирается.
+ */
+void field_draw_coin(uint8_t x, uint8_t y)
+{
+    if (y >= H_MAX || x >= W_MAX || !(coins[y] & (uint16_t)(1u << x)))
+        return;
+    draw_at((uint8_t)(FIELD_X_OFFSET + x * POS_X_STEP),
+            (uint8_t)(FIELD_Y_OFFSET + y * CELL_H_PX + COIN_Y_OFFSET),
+            COIN_H, spr_cn_p0, spr_cn_p1);
+}
+
 uint8_t field_take_coin(uint8_t x, uint8_t y)
 {
     uint16_t bit = (uint16_t)(1u << x);

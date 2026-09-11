@@ -17,13 +17,14 @@
 
         .include "imag.inc"
 
-        .globl __do_rom_off, mos_ptr
+        .globl __do_rom_off, mos_ptr, mos_ptr2
 
 ; Рабочий указатель для перенесённых с ca65 процедур: там он назывался ptr1 и
 ; брался из потрохов cc65. Свой - надёжнее, чем занимать мнимый регистр.
-        .zeropage mos_ptr, cp_src, cp_dst, cp_cnt
+        .zeropage mos_ptr, mos_ptr2, cp_src, cp_dst, cp_cnt
         .section .zp.bss,"aw",@nobits
-mos_ptr: .zero 2
+mos_ptr:  .zero 2
+mos_ptr2: .zero 2      ; второй рабочий указатель: у cc65 это ptr2
 cp_src:  .zero 2
 cp_dst:  .zero 2
 
