@@ -426,6 +426,8 @@ static uint8_t life_at;
 #define OVER_DELAY    30u
 #endif
 static uint8_t over_wait;
+static uint8_t over_hue;        /* текущий оттенок перелива таблички */
+static uint8_t over_hold;       /* тактов до следующего оттенка      */
 
 /*
  * Табличка GAME OVER: надпись в ДВЕ строки по четыре знака.
@@ -433,17 +435,17 @@ static uint8_t over_wait;
  * Две строки, а не одна, - из-за того, чем красится фон. Цвета в кадровом
  * буфере нет: оттенок задаёт COLPF2 на всю строку растра сразу, и покрасить им
  * один прямоугольник нельзя. Красят аппаратные игроки, растянутые вчетверо, -
- * такой игрок покрывает 64 точки, и ДВУХ хватает ровно на 128 точек. Надпись в
- * одну строку заняла бы 144 точки и потребовала третьего игрока, а его позицию
+ * такой игрок покрывает 64 точки, и ДВУХ хватает на 128. Надпись в одну строку
+ * заняла бы 144 точки и потребовала третьего игрока, а его позицию
  * перебивает цепочка прерываний по строке (она переставляет HPOSP2 по таблице
  * позиций врагов). Возиться с этим ради одной строки не стоило.
  *
- * Отсюда вся геометрия: коробка ровно 32 подшага = 128 точек, по 64 на игрока,
- * и стоит она посередине поля.
+ * Отсюда вся геометрия: ширина набирается битами растянутого игрока, а бит -
+ * это 8 точек. Двух игроков хватает на 128 точек; табличке нужно меньше, и
+ * лишние биты правого игрока просто гасятся маской OVER_BAND_HI.
  */
 #define OVER_TEXT1    "GAME"
 #define OVER_TEXT2    "OVER"
-#define OVER_X        16u               /* байт: надпись по центру коробки */
 #define OVER_Y1       96u               /* первая строка надписи           */
 #define OVER_LINE     16u               /* шаг между строками, 12 знак + 4 */
 #define OVER_Y2       (OVER_Y1 + OVER_LINE)
@@ -458,14 +460,44 @@ static uint8_t over_wait;
 #define OVER_PAD_Y    6u
 #define OVER_IN_Y     (OVER_GAP_Y + OVER_EDGE_Y + OVER_PAD_Y)
 
-#define OVER_BOX_X    24u               /* 32 подшага по центру поля */
-#define OVER_BOX_W    32u
-#define OVER_BOX_Y    (uint8_t)(OVER_Y1 - OVER_IN_Y)
-#define OVER_BOX_H    (uint8_t)(OVER_LINE + FONT_H + 2u * OVER_IN_Y)
-
 /* Рамка по X - те же доли, что и по Y, но в подшагах (подшаг = 4 точки) */
 #define OVER_GAP_SUB  2u
 #define OVER_EDGE_SUB 1u
+#define OVER_PAD_SUB  2u                /* просвет от рамки до букв, 8 точек */
+#define OVER_IN_SUB   (OVER_GAP_SUB + OVER_EDGE_SUB + OVER_PAD_SUB)
+
+/* Надпись - четыре знака по FONT_W байт, то есть вдвое больше подшагов */
+#define OVER_TEXT_SUB (4u * FONT_W * 2u)
+#define OVER_BOX_W    (uint8_t)(OVER_TEXT_SUB + 2u * OVER_IN_SUB)
+#define OVER_BOX_X    (uint8_t)((80u - OVER_BOX_W) / 2u)
+#define OVER_BOX_Y    (uint8_t)(OVER_Y1 - OVER_IN_Y)
+#define OVER_BOX_H    (uint8_t)(OVER_LINE + FONT_H + 2u * OVER_IN_Y)
+
+/* Байт начала надписи считается ИЗ коробки, а не задаётся числом: иначе при
+ * смене отступов надпись уезжает с середины. */
+#define OVER_X        (uint8_t)((OVER_BOX_X + OVER_IN_SUB) / 2u)
+
+/*
+ * Красится НЕ вся коробка, а всё внутри зазора: рамка и поле с буквами. Зазор
+ * остаётся в цвете поля - тёмным и неизменным, и табличка отделена от земли
+ * при любом оттенке перелива. Крась его тоже, и на такте, когда оттенок
+ * совпадёт с оттенком уровня, край таблички слился бы с землёй.
+ */
+#define OVER_BAND_X   (uint8_t)(OVER_BOX_X + OVER_GAP_SUB)
+#define OVER_BAND_W   (uint8_t)(OVER_BOX_W - 2u * OVER_GAP_SUB)
+#define OVER_BAND_Y   (uint8_t)(OVER_BOX_Y + OVER_GAP_Y)
+#define OVER_BAND_H   (uint8_t)(OVER_BOX_H - 2u * OVER_GAP_Y)
+
+/* Правый игрок берёт столько старших бит, сколько осталось от ширины после
+ * левого: бит = 2 подшага, левый игрок закрывает восемь бит. */
+#define OVER_BAND_HI  (uint8_t)(0xFFu << (8u - (OVER_BAND_W / 2u - 8u)))
+
+/* Перелив: оттенок фона идёт по кругу, ЯРКОСТЬ не трогается - её держит
+ * COLPF1, и от неё зависит читаемость букв и рамки. Оттенок 0 пропускается,
+ * он серый и на перелив не похож. */
+#define OVER_HUE_LUM  4u
+#define OVER_HUE_HOLD 2u                /* тактов на оттенок: такт 1/10 с,
+                                         * весь круг из пятнадцати - три секунды */
 
 /*
  * Начало партии с нуля. Вынесено из main отдельной процедурой, потому что то
@@ -546,17 +578,21 @@ static void draw_game_over(void)
     text_string(OVER_X, OVER_Y2, OVER_TEXT2);
 
     /*
-     * Красный фон. Красят два игрока, растянутые вчетверо: каждый покрывает 64
-     * точки, вдвоём - ровно ширину коробки. Разбор в src/pmg.s.
+     * Цветной фон. Красят два игрока, растянутые вчетверо: каждый покрывает
+     * 64 точки. Оттенок дальше переливается в цикле такта. Разбор в
+     * src/pmg.s.
      *
      * Игроков занимаем без опаски: игра кончилась, Диггер убран pmg_hide,
      * враги сняты pmg_clear выше. Обратно всё вернёт game_start.
      */
+    over_hue = 0;
+    over_hold = OVER_HUE_HOLD;
     OS_PCOLR0 = COL_OVER_BG;
     OS_PCOLR1 = COL_OVER_BG;
-    pmg_hpos = PMG_HPOS(OVER_BOX_X);
-    pmg_by = OVER_BOX_Y;
-    pmg_bhi = OVER_BOX_H;
+    pmg_band_hi = OVER_BAND_HI;
+    pmg_hpos = PMG_HPOS(OVER_BAND_X);
+    pmg_by = OVER_BAND_Y;
+    pmg_bhi = OVER_BAND_H;
     pmg_band();
 }
 
@@ -899,12 +935,25 @@ int main(void)
             if (over_wait) {
                 if (--over_wait == 0)
                     draw_game_over();
-            } else if (vbi_trig == 0) {
+            } else {
+                /* Перелив. Оба игрока одного оттенка: они лежат слева и справа
+                 * друг от друга, и разные оттенки читались бы не переливом, а
+                 * табличкой из двух половин. */
+                if (--over_hold == 0) {
+                    over_hold = OVER_HUE_HOLD;
+                    if (++over_hue > 15u)
+                        over_hue = 1u;      /* 0 - серый, его пропускаем */
+                    OS_PCOLR0 = ATARI_COLOR(over_hue, OVER_HUE_LUM);
+                    OS_PCOLR1 = OS_PCOLR0;
+                }
+
                 /* Кнопка выстрела активна нулём. Ждём её ТОЛЬКО когда табличка
                  * уже показана: иначе партия обрывалась бы нажатием, зажатым
                  * ещё до гибели. */
-                state = ST_PLAY;
-                game_start();
+                if (vbi_trig == 0) {
+                    state = ST_PLAY;
+                    game_start();
+                }
             }
         }
 

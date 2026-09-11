@@ -86,6 +86,10 @@ void pmg_clear(void);
  * Вход: pmg_by - первая строка, pmg_bhi - сколько строк. Разбор в src/pmg.s */
 void pmg_band(void);
 
+/* Биты правого игрока полосы: ширина таблички кратна биту (8 точек), лишние
+ * биты справа гасятся маской. См. OVER_BAND_HI в src/main.c */
+extern uint8_t pmg_band_hi;
+
 /* Вернуть игрокам обычную ширину после pmg_band */
 void pmg_sizes(void);
 
