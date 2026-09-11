@@ -85,6 +85,9 @@ uint8_t near8(uint8_t a, uint8_t b, uint8_t lim);
 
 void clear_px_at(uint8_t x_px, uint8_t y, uint8_t w_px, uint8_t h);
 
+/* Зажигает прямоугольник (подшаги по X) - обратное к clear_px_at */
+void field_fill_px(uint8_t x_sub, uint8_t y, uint8_t w_sub, uint8_t h);
+
 /* Перерисовать камень клетки, если он ещё цел (закрыть укус Диггера) */
 void field_draw_coin(uint8_t x, uint8_t y);
 

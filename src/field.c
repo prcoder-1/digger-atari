@@ -292,6 +292,26 @@ static void draw_at(uint8_t x_graph, uint8_t y, uint8_t h,
  * put_coin - "redraw coin to cover bite taken by man" (coin_check, Work/TD.C),
  * на такт раньше, чем камень забирается.
  */
+/*
+ * Заливает прямоугольник ЕДИНИЦАМИ, то есть зажигает точки. Обратное к
+ * clear_px_at, и нужно ровно за тем же: рамка вокруг таблички GAME OVER.
+ *
+ * Границы в ПОДШАГАХ по X, как у clear_px: подшаг вдвое короче байта, поэтому
+ * края, не попавшие на границу байта, закрашиваются половинками.
+ */
+void field_fill_px(uint8_t x_sub, uint8_t y, uint8_t w_sub, uint8_t h)
+{
+    uint8_t r, i;
+
+    for (r = 0; r < h; ++r) {
+        uint8_t *row = SCREEN_ROW(y + r);
+        for (i = 0; i < w_sub; ++i) {
+            uint8_t sub = (uint8_t)(x_sub + i);
+            row[sub >> 1] |= (uint8_t)((sub & 1u) ? 0x0Fu : 0xF0u);
+        }
+    }
+}
+
 void field_draw_coin(uint8_t x, uint8_t y)
 {
     if (y >= H_MAX || x >= W_MAX || !(coins[y] & (uint16_t)(1u << x)))

@@ -383,13 +383,86 @@ static uint8_t life_at;
 #endif
 static uint8_t over_wait;
 
-/* Табличка: девять знаков по два байта - 18 байт из сорока, значит отступ
- * слева одиннадцать. По вертикали - середина поля. */
+/*
+ * Табличка: девять знаков по два байта - 18 байт из сорока, значит отступ слева
+ * одиннадцать. По вертикали - середина поля.
+ *
+ * Слои, считая от края: светлая РАМКА в две точки, тёмный ОТСТУП в четыре, и
+ * уже внутри надпись. Без рамки табличка сливалась с землёй - у той тот же
+ * цвет, что у букв, а отличается она только узором.
+ */
 #define OVER_TEXT     "GAME OVER"
 #define OVER_X        11u
 #define OVER_Y        102u
-#define OVER_W_SUB    (2u * 20u)        /* 18 байт текста плюс поля по байту */
-#define OVER_H        20u               /* 12 строк текста плюс поля сверху и снизу */
+#define OVER_TEXT_W   (9u * 2u)         /* байт под надпись */
+
+/*
+ * Слои таблички, считая от края к центру:
+ *   тёмный ЗАЗОР - отделяет рамку от земли, иначе светлая рамка на светлой
+ *                  земле теряется;
+ *   светлая РАМКА;
+ *   тёмное ПОЛЕ  - на нём и лежит надпись.
+ *
+ * По X всё в ПОДШАГАХ (подшаг - полбайта, 4 точки), по Y в строках растра.
+ */
+#define OVER_GAP_SUB  2u
+#define OVER_GAP_Y    4u
+#define OVER_EDGE_SUB 1u
+#define OVER_EDGE_Y   2u
+#define OVER_PAD_SUB  2u
+#define OVER_PAD_Y    6u
+
+#define OVER_IN_SUB   (OVER_GAP_SUB + OVER_EDGE_SUB + OVER_PAD_SUB)
+#define OVER_IN_Y     (OVER_GAP_Y + OVER_EDGE_Y + OVER_PAD_Y)
+
+/* Внешний прямоугольник - вместе с зазором */
+#define OVER_BOX_X    (uint8_t)(OVER_X * 2u - OVER_IN_SUB)
+#define OVER_BOX_Y    (uint8_t)(OVER_Y - OVER_IN_Y)
+#define OVER_BOX_W    (uint8_t)(OVER_TEXT_W * 2u + 2u * OVER_IN_SUB)
+#define OVER_BOX_H    (uint8_t)(FONT_H + 2u * OVER_IN_Y)
+
+/*
+ * Начало партии с нуля. Вынесено из main отдельной процедурой, потому что то
+ * же самое нужно при перезапуске из таблички GAME OVER: иначе список пришлось
+ * бы держать в двух местах, и однажды они разошлись бы.
+ *
+ * Счёт обнуляется ЗДЕСЬ, а не в объявлении: партия может начинаться не первый
+ * раз.
+ */
+static void game_start(void)
+{
+    /* Экран чистится целиком: field_init заливает землёй только полосу
+     * поля, и всё, что было выше, осталось бы в зоне HUD. */
+    screen_clear(0);
+
+    game_level = 1;
+    game_lives = START_LIVES;
+    bonus_state = BONUS_OFF;
+    bonus_ready = 1;
+    bonus_eaten = 0;
+    score[0] = 0;
+    score[1] = 0;
+    score[2] = 0;
+    life_at = LIFE_FIRST;
+
+    field_init(0);
+    man_init();
+    bags_init(0, 1);
+    bugs_init(0, 1);
+    missile_init(1);
+    music_select(0);
+    hud_init();
+    hud_score();
+    hud_lives(START_LIVES);
+#ifdef DEMO_LEVEL
+    game_level = DEMO_LEVEL;    /* фикстура: посмотреть оттенок уровня N */
+#endif
+    field_palette(0);           /* оттенок уровня; screen_init ставил
+                                 * постоянные, теперь источник правды один */
+#ifdef DIGGER_DEMO
+    demo_init();
+#endif
+}
 
 static void draw_game_over(void)
 {
@@ -397,13 +470,22 @@ static void draw_game_over(void)
      * иначе остаётся цветным обрывком рядом с надписью. */
     pmg_clear();
 
-    /* Сперва прямоугольник фона: надпись выводится непрозрачно, но между
-     * знаками остаются просветы, и без подложки сквозь них лезла бы земля. */
-    cp_x = (uint8_t)((OVER_X - 1u) * 2u);
-    cp_y = OVER_Y - 4u;
-    cp_w = OVER_W_SUB;
-    cp_h = OVER_H;
-    clear_px();
+    /* 1. Весь прямоугольник в тёмное - это будущий зазор */
+    clear_px_at(OVER_BOX_X, OVER_BOX_Y, OVER_BOX_W, OVER_BOX_H);
+
+    /* 2. Внутри него светлый прямоугольник - будущая рамка */
+    field_fill_px((uint8_t)(OVER_BOX_X + OVER_GAP_SUB),
+                  (uint8_t)(OVER_BOX_Y + OVER_GAP_Y),
+                  (uint8_t)(OVER_BOX_W - 2u * OVER_GAP_SUB),
+                  (uint8_t)(OVER_BOX_H - 2u * OVER_GAP_Y));
+
+    /* 3. Выесть середину: от светлого остаётся рамка, внутри - тёмное поле.
+     * Оно нужно и само по себе: надпись выводится непрозрачно, но между
+     * знаками есть просветы, и без подложки сквозь них лезла бы земля. */
+    clear_px_at((uint8_t)(OVER_BOX_X + OVER_GAP_SUB + OVER_EDGE_SUB),
+                (uint8_t)(OVER_BOX_Y + OVER_GAP_Y + OVER_EDGE_Y),
+                (uint8_t)(OVER_BOX_W - 2u * (OVER_GAP_SUB + OVER_EDGE_SUB)),
+                (uint8_t)(OVER_BOX_H - 2u * (OVER_GAP_Y + OVER_EDGE_Y)));
 
     text_string(OVER_X, OVER_Y, OVER_TEXT);
 }
@@ -536,27 +618,7 @@ int main(void)
      * стартует сразу в уровень. */
     menu_init();
 
-    /* Экран чистится целиком: field_init заливает землёй только полосу
-     * поля, и всё, что было выше, осталось бы в зоне HUD. */
-    screen_clear(0);
-    field_init(0);
-    man_init();
-    bags_init(0, 1);
-    bugs_init(0, 1);
-    missile_init(1);
-    music_select(0);
-    hud_init();
-    hud_score();
-    hud_lives(START_LIVES);
-    life_at = LIFE_FIRST;
-#ifdef DEMO_LEVEL
-    game_level = DEMO_LEVEL;    /* фикстура: посмотреть оттенок уровня N */
-#endif
-    field_palette(0);           /* оттенок первого уровня; screen_init ставил
-                                 * постоянные, теперь источник правды один */
-#ifdef DIGGER_DEMO
-    demo_init();
-#endif
+    game_start();
 
     next = (uint8_t)(vbi_frame + TICK_FRAMES);
 
@@ -763,9 +825,17 @@ int main(void)
          * оставался бы висеть на канале до конца сцены. */
         sfx_tick();
 
-        if (state == ST_OVER && over_wait) {
-            if (--over_wait == 0)
-                draw_game_over();
+        if (state == ST_OVER) {
+            if (over_wait) {
+                if (--over_wait == 0)
+                    draw_game_over();
+            } else if (vbi_trig == 0) {
+                /* Кнопка выстрела активна нулём. Ждём её ТОЛЬКО когда табличка
+                 * уже показана: иначе партия обрывалась бы нажатием, зажатым
+                 * ещё до гибели. */
+                state = ST_PLAY;
+                game_start();
+            }
         }
 
         if (state == ST_DONE) {

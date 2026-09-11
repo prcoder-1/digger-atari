@@ -38,8 +38,6 @@
 extern const uint8_t font_digits[];
 extern const uint8_t font_alpha[];
 
-#define FONT_W      2u          /* байт на строку (ячейка 16 точек) */
-#define FONT_H      12u         /* строк на цифру  */
 #define FONT_BYTES  (FONT_W * FONT_H)
 
 void text_digit(uint8_t x_byte, uint8_t y, uint8_t d)
