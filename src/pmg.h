@@ -82,6 +82,13 @@ void pmg_init(void);
  * Диггера иначе переезжает на новый уровень, см. src/pmg.s */
 void pmg_clear(void);
 
+/* Красит прямоугольник таблички GAME OVER тремя игроками учетверённой ширины.
+ * Вход: pmg_by - первая строка, pmg_bhi - сколько строк. Разбор в src/pmg.s */
+void pmg_band(void);
+
+/* Вернуть игрокам обычную ширину после pmg_band */
+void pmg_sizes(void);
+
 void pmg_show(void);
 void pmg_hide(void);
 

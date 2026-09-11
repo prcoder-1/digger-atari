@@ -428,42 +428,44 @@ static uint8_t life_at;
 static uint8_t over_wait;
 
 /*
- * Табличка: девять знаков по два байта - 18 байт из сорока, значит отступ слева
- * одиннадцать. По вертикали - середина поля.
+ * Табличка GAME OVER: надпись в ДВЕ строки по четыре знака.
  *
- * Слои, считая от края: светлая РАМКА в две точки, тёмный ОТСТУП в четыре, и
- * уже внутри надпись. Без рамки табличка сливалась с землёй - у той тот же
- * цвет, что у букв, а отличается она только узором.
+ * Две строки, а не одна, - из-за того, чем красится фон. Цвета в кадровом
+ * буфере нет: оттенок задаёт COLPF2 на всю строку растра сразу, и покрасить им
+ * один прямоугольник нельзя. Красят аппаратные игроки, растянутые вчетверо, -
+ * такой игрок покрывает 64 точки, и ДВУХ хватает ровно на 128 точек. Надпись в
+ * одну строку заняла бы 144 точки и потребовала третьего игрока, а его позицию
+ * перебивает цепочка прерываний по строке (она переставляет HPOSP2 по таблице
+ * позиций врагов). Возиться с этим ради одной строки не стоило.
+ *
+ * Отсюда вся геометрия: коробка ровно 32 подшага = 128 точек, по 64 на игрока,
+ * и стоит она посередине поля.
  */
-#define OVER_TEXT     "GAME OVER"
-#define OVER_X        11u
-#define OVER_Y        102u
-#define OVER_TEXT_W   (9u * 2u)         /* байт под надпись */
+#define OVER_TEXT1    "GAME"
+#define OVER_TEXT2    "OVER"
+#define OVER_X        16u               /* байт: надпись по центру коробки */
+#define OVER_Y1       96u               /* первая строка надписи           */
+#define OVER_LINE     16u               /* шаг между строками, 12 знак + 4 */
+#define OVER_Y2       (OVER_Y1 + OVER_LINE)
 
 /*
- * Слои таблички, считая от края к центру:
- *   тёмный ЗАЗОР - отделяет рамку от земли, иначе светлая рамка на светлой
- *                  земле теряется;
- *   светлая РАМКА;
- *   тёмное ПОЛЕ  - на нём и лежит надпись.
- *
- * По X всё в ПОДШАГАХ (подшаг - полбайта, 4 точки), по Y в строках растра.
+ * Слои, считая от края к центру: тёмный ЗАЗОР - отделяет рамку от земли, иначе
+ * светлая рамка на светлой земле теряется; светлая РАМКА; тёмное ПОЛЕ, на нём
+ * и лежит надпись. По X всё в подшагах, по Y в строках растра.
  */
-#define OVER_GAP_SUB  2u
 #define OVER_GAP_Y    4u
-#define OVER_EDGE_SUB 1u
 #define OVER_EDGE_Y   2u
-#define OVER_PAD_SUB  2u
 #define OVER_PAD_Y    6u
-
-#define OVER_IN_SUB   (OVER_GAP_SUB + OVER_EDGE_SUB + OVER_PAD_SUB)
 #define OVER_IN_Y     (OVER_GAP_Y + OVER_EDGE_Y + OVER_PAD_Y)
 
-/* Внешний прямоугольник - вместе с зазором */
-#define OVER_BOX_X    (uint8_t)(OVER_X * 2u - OVER_IN_SUB)
-#define OVER_BOX_Y    (uint8_t)(OVER_Y - OVER_IN_Y)
-#define OVER_BOX_W    (uint8_t)(OVER_TEXT_W * 2u + 2u * OVER_IN_SUB)
-#define OVER_BOX_H    (uint8_t)(FONT_H + 2u * OVER_IN_Y)
+#define OVER_BOX_X    24u               /* 32 подшага по центру поля */
+#define OVER_BOX_W    32u
+#define OVER_BOX_Y    (uint8_t)(OVER_Y1 - OVER_IN_Y)
+#define OVER_BOX_H    (uint8_t)(OVER_LINE + FONT_H + 2u * OVER_IN_Y)
+
+/* Рамка по X - те же доли, что и по Y, но в подшагах (подшаг = 4 точки) */
+#define OVER_GAP_SUB  2u
+#define OVER_EDGE_SUB 1u
 
 /*
  * Начало партии с нуля. Вынесено из main отдельной процедурой, потому что то
@@ -478,6 +480,15 @@ static void game_start(void)
     /* Экран чистится целиком: field_init заливает землёй только полосу
      * поля, и всё, что было выше, осталось бы в зоне HUD. */
     screen_clear(0);
+
+    /* Вернуть спрайтам игровой вид: табличка GAME OVER перекрашивала игроков,
+     * растягивала их вчетверо и замораживала перестановку позиций. */
+    pmg_clear();
+    pmg_sizes();
+    OS_PCOLR0 = COL_PM_BODY;
+    OS_PCOLR1 = COL_PM_BEAK;
+    OS_PCOLR2 = COL_PM_BUG;
+    OS_PCOLR3 = COL_PM_BUG;
 
     game_level = 1;
     game_lives = START_LIVES;
@@ -531,7 +542,22 @@ static void draw_game_over(void)
                 (uint8_t)(OVER_BOX_W - 2u * (OVER_GAP_SUB + OVER_EDGE_SUB)),
                 (uint8_t)(OVER_BOX_H - 2u * (OVER_GAP_Y + OVER_EDGE_Y)));
 
-    text_string(OVER_X, OVER_Y, OVER_TEXT);
+    text_string(OVER_X, OVER_Y1, OVER_TEXT1);
+    text_string(OVER_X, OVER_Y2, OVER_TEXT2);
+
+    /*
+     * Красный фон. Красят два игрока, растянутые вчетверо: каждый покрывает 64
+     * точки, вдвоём - ровно ширину коробки. Разбор в src/pmg.s.
+     *
+     * Игроков занимаем без опаски: игра кончилась, Диггер убран pmg_hide,
+     * враги сняты pmg_clear выше. Обратно всё вернёт game_start.
+     */
+    OS_PCOLR0 = COL_OVER_BG;
+    OS_PCOLR1 = COL_OVER_BG;
+    pmg_hpos = PMG_HPOS(OVER_BOX_X);
+    pmg_by = OVER_BOX_Y;
+    pmg_bhi = OVER_BOX_H;
+    pmg_band();
 }
 
 static void check_extra_life(void)
