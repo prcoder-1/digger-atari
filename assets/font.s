@@ -138,3 +138,100 @@ _font_digits:
         .byte $00,$F0
         .byte $00,$F0
 
+
+; Буквы того же шрифта, прямо из оригинала (CLib/CHAR__X.CHR).
+; Порядок - как в строке ниже; смотри font_letter в src/text.c.
+        .export _font_alpha
+_font_alpha:
+; --- A ---
+        .byte $0F,$C0
+        .byte $1F,$E0
+        .byte $18,$60
+        .byte $18,$60
+        .byte $18,$60
+        .byte $1F,$E0
+        .byte $3F,$F0
+        .byte $38,$30
+        .byte $38,$30
+        .byte $38,$30
+        .byte $38,$30
+        .byte $38,$30
+; --- E ---
+        .byte $1F,$F0
+        .byte $3F,$F0
+        .byte $30,$00
+        .byte $30,$00
+        .byte $30,$00
+        .byte $3F,$C0
+        .byte $3F,$C0
+        .byte $3C,$00
+        .byte $3C,$00
+        .byte $3C,$00
+        .byte $3F,$F0
+        .byte $1F,$F0
+; --- G ---
+        .byte $1F,$E0
+        .byte $3F,$F0
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$00
+        .byte $30,$00
+        .byte $38,$E0
+        .byte $3C,$F0
+        .byte $3C,$30
+        .byte $3C,$30
+        .byte $3F,$F0
+        .byte $1F,$E0
+; --- M ---
+        .byte $1F,$E0
+        .byte $3F,$F0
+        .byte $33,$30
+        .byte $33,$30
+        .byte $33,$30
+        .byte $33,$30
+        .byte $3B,$30
+        .byte $3B,$30
+        .byte $3B,$30
+        .byte $3B,$30
+        .byte $3B,$30
+        .byte $3B,$30
+; --- O ---
+        .byte $1F,$E0
+        .byte $3F,$F0
+        .byte $30,$F0
+        .byte $30,$F0
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $3F,$F0
+        .byte $1F,$E0
+; --- R ---
+        .byte $1F,$80
+        .byte $3F,$C0
+        .byte $30,$C0
+        .byte $30,$C0
+        .byte $30,$C0
+        .byte $3F,$C0
+        .byte $3F,$F0
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+; --- V ---
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $18,$C0
+        .byte $18,$C0
+        .byte $1F,$C0
+        .byte $0F,$80
+

@@ -19,6 +19,7 @@ font2c.py - шрифт счёта из порта на БК -> данные дл
 """
 
 import argparse
+import os
 import re
 import sys
 
@@ -55,6 +56,40 @@ def row_to_cell(row_bytes):
     return [(bits >> 8) & 0xFF, bits & 0xFF]
 
 
+# Буквы берутся ПРЯМО ИЗ ОРИГИНАЛА, а не через порт на БК: у того полный шрифт
+# взят из ПЗУ БК и к Digger отношения не имеет. В CLib/CHAR__X.CHR лежит тот же
+# шрифт, что и у цифр - 12x12 точек, три байта на строку по два бита на точку.
+#
+# Проверено сверкой: цифра 0 из CHAR__0.CHR и наша font_digits[0] совпадают
+# точка в точку, значит шрифты действительно одного набора.
+CHR_DIR = '/mnt/storage2/Games/Digger/src/CLib'
+
+
+def parse_chr(path):
+    """CHAR__X.CHR -> двенадцать строк по 12 точек (список из 0/1)."""
+    text = open(path, encoding='latin-1').read()
+    body = text.split('{', 1)[1]
+    nums = [int(v) for v in re.findall(r'-?\d+', body)]
+    w, h = nums[0], nums[1]             # первые два числа - ширина в байтах и высота
+    out = []
+    for r in range(h):
+        bits = []
+        for b in nums[2 + r * w: 2 + (r + 1) * w]:
+            for k in range(3, -1, -1):  # четыре точки в байте, по два бита
+                bits.append(1 if (b >> (k * 2)) & 3 else 0)
+        out.append(bits[:GLYPH_PX])
+    return out
+
+
+def bits_to_cell(bits):
+    """12 точек -> два байта ячейки в 16 точек, старший бит слева."""
+    v = 0
+    for i, bit in enumerate(bits):
+        if bit:
+            v |= 1 << (CELL_PX - 1 - (LEFT_MARGIN + i))
+    return [(v >> 8) & 0xFF, v & 0xFF]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', default='/home/prcoder/БК0010-develop/'
@@ -86,6 +121,25 @@ def main():
         for r in idx[d]:
             row = row_to_cell(rows[r])
             lines.append('        .byte ' + ','.join('$%02X' % v for v in row))
+    lines.append('')
+
+    # Буквы для надписи GAME OVER. ВЕСЬ алфавит (26 букв, 624 байта) сейчас не
+    # влезает: в MAIN свободно около полукилобайта. Понадобятся остальные -
+    # добавить их в ALPHA, место придётся искать отдельно.
+    ALPHA = 'AEGMORV'
+    lines += [
+        '',
+        '; Буквы того же шрифта, прямо из оригинала (CLib/CHAR__X.CHR).',
+        '; Порядок - как в строке ниже; смотри font_letter в src/text.c.',
+        '        .export _font_alpha',
+        '_font_alpha:',
+    ]
+    for ch in ALPHA:
+        lines.append('; --- %s ---' % ch)
+        for bits in parse_chr(os.path.join(CHR_DIR, 'CHAR__%s.CHR' % ch)):
+            lines.append('        .byte ' +
+                         ','.join('$%02X' % v for v in bits_to_cell(bits)))
+    print('букв: %d, всего %d байт' % (len(ALPHA), len(ALPHA) * 12 * 2))
     lines.append('')
 
     with open(a.asm, 'w') as f:

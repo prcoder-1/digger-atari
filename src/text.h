@@ -14,9 +14,7 @@
 
 #include <stdint.h>
 
- /* Символ по внутреннему коду Atari (не ATASCII) */
-void text_char(uint8_t x_byte, uint8_t y, uint8_t internal_code);
-
+ 
 /* Цифра 0..9 */
 void text_digit(uint8_t x_byte, uint8_t y, uint8_t d);
 

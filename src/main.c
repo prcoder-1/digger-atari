@@ -206,7 +206,11 @@ extern uint8_t vbi_trig;
 
 /* Пять кадров надгробия равномерно по всей длине марша */
 #define RIP_STAGE     (MARCH_TICKS / 5u)
+#ifdef DEMO_ONELIFE
+#define START_LIVES   1u        /* фикстура: дойти до конца игры за одну гибель */
+#else
 #define START_LIVES   3u
+#endif
 
 /*
  * Уровень считается пройденным по любому из двух условий оригинала: собраны
@@ -366,6 +370,43 @@ uint8_t game_lives = START_LIVES;
  * переполнен. Начальное значение ставит main, см. LIFE_FIRST. */
 #define LIFE_FIRST  0x02u       /* первый рубеж: 020000 */
 static uint8_t life_at;
+
+/*
+ * Конец игры: пауза, потом табличка.
+ *
+ * Пауза в три секунды - такт идёт 10 Гц, значит тридцать тактов. Нужна она
+ * затем, чтобы игрок увидел, ЧЕМ кончилось: марш уже отыграл, на поле стоит
+ * надгробие, и надпись поверх него сразу выглядела бы обрывом.
+ */
+#ifndef OVER_DELAY
+#define OVER_DELAY    30u
+#endif
+static uint8_t over_wait;
+
+/* Табличка: девять знаков по два байта - 18 байт из сорока, значит отступ
+ * слева одиннадцать. По вертикали - середина поля. */
+#define OVER_TEXT     "GAME OVER"
+#define OVER_X        11u
+#define OVER_Y        102u
+#define OVER_W_SUB    (2u * 20u)        /* 18 байт текста плюс поля по байту */
+#define OVER_H        20u               /* 12 строк текста плюс поля сверху и снизу */
+
+static void draw_game_over(void)
+{
+    /* Спрайтовую графику снять: игра кончилась, и заливка последнего врага
+     * иначе остаётся цветным обрывком рядом с надписью. */
+    pmg_clear();
+
+    /* Сперва прямоугольник фона: надпись выводится непрозрачно, но между
+     * знаками остаются просветы, и без подложки сквозь них лезла бы земля. */
+    cp_x = (uint8_t)((OVER_X - 1u) * 2u);
+    cp_y = OVER_Y - 4u;
+    cp_w = OVER_W_SUB;
+    cp_h = OVER_H;
+    clear_px();
+
+    text_string(OVER_X, OVER_Y, OVER_TEXT);
+}
 
 static void check_extra_life(void)
 {
@@ -722,6 +763,11 @@ int main(void)
          * оставался бы висеть на канале до конца сцены. */
         sfx_tick();
 
+        if (state == ST_OVER && over_wait) {
+            if (--over_wait == 0)
+                draw_game_over();
+        }
+
         if (state == ST_DONE) {
             if (!tune_tick()) {
                 /* Экран уровня: после восьмого крутятся пятый..восьмой */
@@ -845,7 +891,8 @@ int main(void)
                     game_lives = 0;
                     hud_lives(0);
                     menu_submit_score();
-                    text_string(14, 100, "GAME OVER");
+                    /* Табличка не сразу: сперва пауза, см. over_wait */
+                    over_wait = OVER_DELAY;
                     state = ST_OVER;
                 }
             }

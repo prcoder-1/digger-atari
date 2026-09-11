@@ -26,30 +26,7 @@
 #endif
 
 
-#define CHARSET_ROM  ((const uint8_t *)0xE000u)
 
-/* Внутренние коды Atari: цифры начинаются с $10, заглавные буквы с $21 */
-#define INT_DIGIT0   0x10u
-#define INT_LETTER_A 0x21u
-
-/* Полубайт глифа -> байт экрана: каждый бит удвоен */
-static const uint8_t expand[16] = {
-    0x00, 0x03, 0x0C, 0x0F, 0x30, 0x33, 0x3C, 0x3F,
-    0xC0, 0xC3, 0xCC, 0xCF, 0xF0, 0xF3, 0xFC, 0xFF
-};
-
-void text_char(uint8_t x_byte, uint8_t y, uint8_t internal_code)
-{
-    const uint8_t *g = CHARSET_ROM + ((unsigned)internal_code << 3);
-    uint8_t row, b;
-
-    for (row = 0; row < 8u; ++row) {
-        uint8_t *p = SCREEN_ROW(y + row);
-        b = g[row];
-        p[x_byte]     = expand[b >> 4];
-        p[x_byte + 1] = expand[b & 0x0Fu];
-    }
-}
 
 /*
  * Цифры счёта берутся из шрифта ОРИГИНАЛА, а не из знакогенератора ПЗУ.
@@ -59,6 +36,7 @@ void text_char(uint8_t x_byte, uint8_t y, uint8_t internal_code)
  * непрозрачный вывод их не портит.
  */
 extern const uint8_t font_digits[];
+extern const uint8_t font_alpha[];
 
 #define FONT_W      2u          /* байт на строку (ячейка 16 точек) */
 #define FONT_H      12u         /* строк на цифру  */
@@ -74,18 +52,47 @@ void text_digit(uint8_t x_byte, uint8_t y, uint8_t d)
     blit_plain();
 }
 
+/*
+ * Порядок букв в font_alpha - тот же, что в ALPHA у tools/font2c.py. Там их
+ * ровно столько, сколько нужно надписи GAME OVER: весь алфавит в MAIN сейчас
+ * не влезает.
+ */
+static const char alpha_order[] = "AEGMORV";
+
+/*
+ * Строка шрифтом ИГРЫ, а не знакогенератором ПЗУ.
+ *
+ * Раньше буквы брались из ПЗУ по $E000 - они мельче и другого рисунка, надпись
+ * выбивалась из оформления. Теперь и цифры, и буквы идут из одного шрифта
+ * оригинала (assets/font.s), ячейка 16 точек, двенадцать строк.
+ *
+ * Неизвестный знак - пробел: место занимается, ничего не рисуется.
+ */
 void text_string(uint8_t x_byte, uint8_t y, const char *s)
 {
     while (*s) {
         char c = *s++;
-        uint8_t code;
-        if (c >= '0' && c <= '9')
-            code = (uint8_t)(INT_DIGIT0 + (c - '0'));
-        else if (c >= 'A' && c <= 'Z')
-            code = (uint8_t)(INT_LETTER_A + (c - 'A'));
-        else
-            code = 0;                       /* пробел */
-        text_char(x_byte, y, code);
+        const uint8_t *g = 0;
+
+        if (c >= '0' && c <= '9') {
+            g = font_digits + (unsigned)(c - '0') * FONT_BYTES;
+        } else {
+            uint8_t i;
+            for (i = 0; alpha_order[i]; ++i)
+                if (alpha_order[i] == c) {
+                    g = font_alpha + (unsigned)i * FONT_BYTES;
+                    break;
+                }
+        }
+
+        if (g) {
+            bl_x = x_byte;
+            bl_y = y;
+            bl_w = FONT_W;
+            bl_h = FONT_H;
+            bl_src = g;
+            blit_plain();
+        }
         x_byte += 2u;
     }
 }
