@@ -469,7 +469,7 @@ void bugs_tick(void)
          */
         if (b->kind == BUG_HOBBIN) {
             bags_bug_eat(b->x, b->y, 1u);       /* грызущий ест любой мешок */
-        } else if (!bags_bug_push(b->x, b->y, b->dir)) {
+        } else if (!bags_push_at(b->x, b->y, b->dir)) {
             b->x = old_x;
             b->y = old_y;
             if (b->count < 100u)

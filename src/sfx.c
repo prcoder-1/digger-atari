@@ -34,6 +34,8 @@ extern uint8_t  sfx_mvol;
 extern uint8_t  sfx_env_vol;
 extern uint8_t  sfx_pulse, sfx_pph, sfx_pvol;
 extern uint8_t  sfx_bugcnt, sfx_bugset, sfx_bugvol;
+extern uint8_t  sfx_lifecnt, sfx_lifevol;
+extern uint8_t  sfx_lifef[2];
 extern uint8_t  sfx_bugf[2];
 extern uint8_t  sfx_pf[2], sfx_pclick[2];
 
@@ -52,12 +54,13 @@ void sfx_init(void)
 {
     pokey_init();
     left = 0;
+    sfx_lifecnt = 0;            /* иначе залипший счётчик глушил бы всё подряд */
     sfx_started = 0;
 }
 
 void sfx_play(uint16_t bk_period, uint8_t timbre, uint8_t vol, uint8_t ticks)
 {
-    if (bk_period == 0)
+    if (bk_period == 0 || sfx_lifecnt)
         return;
 
     sfx_money = 0;              /* новый эффект вытесняет золото, как и всё */
@@ -84,6 +87,8 @@ void sfx_play(uint16_t bk_period, uint8_t timbre, uint8_t vol, uint8_t ticks)
  */
 void sfx_gold(void)
 {
+    if (sfx_lifecnt)
+        return;
     sfx_m1 = bk_to_div(25u);
     sfx_m2 = bk_to_div(200u);
     sfx_mvol = (uint8_t)(SFX_TONE | 12u);
@@ -102,9 +107,14 @@ void sfx_gold(void)
 void sfx_coin(uint8_t step)
 {
     static const uint16_t note[8] = { 114u, 101u, 90u, 85u, 76u, 67u, 60u, 57u };
-    uint16_t f = bk_to_div(note[step & 7u]);
+    uint16_t f;
+    uint16_t c;
+
+    if (sfx_lifecnt)
+        return;
+    f = bk_to_div(note[step & 7u]);
     /* Щелчок: у оригинала t_period 1000 счётчика PIT, в единицах БК это 50 */
-    uint16_t c = bk_to_div(50u);
+    c = bk_to_div(50u);
 
     sfx_pf[0] = (uint8_t)f;      sfx_pf[1] = (uint8_t)(f >> 8);
     sfx_pclick[0] = (uint8_t)c;  sfx_pclick[1] = (uint8_t)(c >> 8);
@@ -123,6 +133,8 @@ void sfx_coin(uint8_t step)
  */
 void sfx_bug(void)
 {
+    if (sfx_lifecnt)
+        return;
     sfx_env_vol = 0;            /* огибающая на это время молчит */
     sfx_money = 0;
     sfx_pulse = 0;
@@ -130,6 +142,38 @@ void sfx_bug(void)
     sfx_bugvol = (uint8_t)(SFX_TONE | 12u);
     sfx_bugcnt = 0;             /* нулевой счётчик заведёт первый свип */
     sfx_bugset = 4u;            /* три свипа: первый расходуется на завод */
+    ++sfx_started;
+}
+
+/*
+ * Звук новой жизни. В оригинале (snd_life/chk_life в Work/TH.C) это трель с
+ * поднимающейся высотой; сама последовательность идёт по кадрам, её ведёт
+ * кадровое прерывание (см. src/pokey.s), здесь только запуск.
+ *
+ * Пока она играет, ПРОЧИЕ эффекты не звучат - отсюда проверки sfx_lifecnt выше.
+ * Это порядок оригинала: chk_life стоит в time() предпоследним, после
+ * chk_coin, chk_fire, chk_dead и остальных, а каждый следующий переписывает
+ * период. То есть новая жизнь там перебивает всё на свои три секунды.
+ */
+void sfx_life(void)
+{
+    sfx_money = 0;
+    sfx_pulse = 0;
+    sfx_bugset = 0;
+    sfx_env_vol = 0;            /* огибающая на это время молчит */
+    left = 0;                   /* канал ведёт последовательность */
+    sfx_lifef[0] = (uint8_t)724u;
+    sfx_lifef[1] = (uint8_t)(724u >> 8);
+    sfx_lifevol = (uint8_t)(SFX_TONE | 14u);    /* громко: звук должен быть явным */
+    /*
+     * Сто сорок четыре кадра - это 2.88 с, ровно длительность оригинала, и
+     * ровно тот же разбег высоты: делитель уходит с 724 к 436, то есть с 1216
+     * к 2015 Гц (у оригинала 1212..1975). Импульсов при этом выходит
+     * восемнадцать вместо шестнадцати - кадр у нас 50 Гц против тридцати трёх,
+     * и трель чуть частее. Совпадения разом и по длительности, и по высоте, и
+     * по числу импульсов при таком соотношении частот не бывает.
+     */
+    sfx_lifecnt = 144u;
     ++sfx_started;
 }
 

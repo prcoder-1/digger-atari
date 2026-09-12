@@ -23,6 +23,7 @@
         .export _sfx_money, _sfx_m1, _sfx_m2, _sfx_mvol
         .export _sfx_pulse, _sfx_pph, _sfx_pf, _sfx_pclick, _sfx_pvol
         .export _sfx_bugcnt, _sfx_bugset, _sfx_bugf, _sfx_bugvol
+        .export _sfx_lifecnt, _sfx_lifef, _sfx_lifevol
 
 AUDF1   = $D200
 AUDC1   = $D201
@@ -109,6 +110,24 @@ _sfx_bugf:   .res 2             ; текущий делитель, ползёт 
 _sfx_bugvol: .byte 0            ; тембр и громкость
 sfx_bt:      .res 2             ; временное под сдвиг на четыре
 
+; Звук новой жизни. В оригинале (snd_life/chk_life в Work/TH.C) это не тон, а
+; ТРЕЛЬ с поднимающейся высотой:
+;
+;       life_count = 96;
+;       if((life_count/3) % 2) t_period = 600 + (life_count << 2);
+;       life_count--;
+;
+; То есть три тика звучит, три молчит - шестнадцать импульсов, - а период PIT
+; идёт с 984 к 604, и высота растёт с 1212 к 1975 Гц.
+;
+; Пересчёт. Период PIT делится на 20, получаются единицы БК 49.2..30.2, а из
+; них по формуле движка (N = 14.86 * P - 7, см. sfx.h) выходят делители POKEY
+; 724..442. Делитель убавляется на 2 за кадр, фаза - четыре кадра; сколько
+; кадров всего, задаёт sfx_life в src/sfx.c, там же и разбор чисел.
+_sfx_lifecnt: .byte 0           ; кадров осталось
+_sfx_lifef:   .res 2            ; текущий делитель, ползёт ВНИЗ
+_sfx_lifevol: .byte 0           ; тембр и громкость
+
 ; Накопительный счётчик записей в POKEY. Проверять звук снимком экрана
 ; нельзя, а счётчик показывает, доходит ли дело до чипа вообще.
 _sfx_writes: .byte 0
@@ -174,7 +193,10 @@ _pokey_all_off:
 ; Громкость хранится с дробной частью (8.8), иначе при пятидесяти шагах в
 ; секунду затухание с 12 до нуля заняло бы четверть секунды на любой звук.
 _sfx_env_tick:
-        lda     _sfx_money
+        lda     _sfx_lifecnt
+        beq     :+
+        jmp     life_tick               ; новая жизнь ведёт канал сама
+:       lda     _sfx_money
         beq     :+
         jmp     money_tick              ; золото ведёт канал само
 :       lda     _sfx_pulse
@@ -218,6 +240,37 @@ env_off:
         sta     AUDC2
 env_done:
         rts
+
+; Очередной кадр звука новой жизни: трель с поднимающейся высотой, см. выше.
+life_tick:
+        lda     _sfx_lifecnt
+        and     #4                      ; четыре кадра звук, четыре тишина
+        beq     life_quiet
+        lda     _sfx_lifef
+        sta     AUDF1
+        lda     _sfx_lifef+1
+        sta     AUDF2
+        lda     #0
+        sta     AUDC1                   ; связанная пара: звук с AUDC2
+        lda     _sfx_lifevol
+        sta     AUDC2
+        jmp     life_step
+life_quiet:
+        lda     #0
+        sta     AUDC2
+life_step:
+        sec                             ; высота растёт: делитель на 2 меньше
+        lda     _sfx_lifef
+        sbc     #2
+        sta     _sfx_lifef
+        lda     _sfx_lifef+1
+        sbc     #0
+        sta     _sfx_lifef+1
+        dec     _sfx_lifecnt
+        bne     :+
+        lda     #0
+        sta     AUDC2                   ; отзвучала - замолчать
+:       rts
 
 ; Очередной кадр звука съеденного врага.
 bug_tick:

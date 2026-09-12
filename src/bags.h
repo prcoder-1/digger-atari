@@ -70,12 +70,12 @@ uint8_t bags_hit_man(void);
 void bags_init(uint8_t screen, uint8_t difficulty);
 void bags_tick(void);
 
-/* Пробует толкнуть мешок в клетке (x_log, y_log) в сторону dir.
- * Возвращает 1, если толкнуть удалось (или мешка там нет). */
-uint8_t bags_push(uint8_t x_log, uint8_t y_log, uint8_t dir);
-
-/* Ноббин упёрся в мешок: вбок толкает, вверх-вниз нет. 1 - идти можно. */
-uint8_t bags_bug_push(uint8_t x_sub, uint8_t y, uint8_t dir);
+/*
+ * Кто-то упёрся в мешок положением (x_sub, y): вбок толкает вместе со всей
+ * цепочкой, вверх-вниз не сдвинуть. 1 - идти можно. Положение БУДУЩЕЕ, уже со
+ * сделанным шагом; разбор в bags.c.
+ */
+uint8_t bags_push_at(uint8_t x_sub, uint8_t y, uint8_t dir);
 
 /* Враг съел мешок. any=1 - Хоббин, ест любой; any=0 - Ноббину только золото. */
 void bags_bug_eat(uint8_t x_sub, uint8_t y, uint8_t any);

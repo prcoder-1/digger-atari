@@ -412,7 +412,11 @@ uint8_t game_lives = START_LIVES;
  */
 /* Без инициализатора НАРОЧНО: с ним переменная уходит в DATA, а MAIN
  * переполнен. Начальное значение ставит main, см. LIFE_FIRST. */
+#ifdef DEMO_LIFE
+#define LIFE_FIRST  0x00u       /* фикстура: жизнь выдаётся на первом же такте */
+#else
 #define LIFE_FIRST  0x02u       /* первый рубеж: 020000 */
+#endif
 static uint8_t life_at;
 
 /*
@@ -616,7 +620,7 @@ static void check_extra_life(void)
     if (game_lives < MAX_LIVES) {
         ++game_lives;
         hud_lives(game_lives);
-        sfx_play(38u, SFX_TONE, 14u, 4u);       /* звук новой жизни */
+        sfx_life();                             /* звук новой жизни */
     }
 
     /*
