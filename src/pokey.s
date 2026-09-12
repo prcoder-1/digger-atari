@@ -23,7 +23,7 @@
         .export _sfx_money, _sfx_m1, _sfx_m2, _sfx_mvol
         .export _sfx_pulse, _sfx_pph, _sfx_pf, _sfx_pclick, _sfx_pvol
         .export _sfx_bugcnt, _sfx_bugset, _sfx_bugf, _sfx_bugvol
-        .export _sfx_lifecnt, _sfx_lifef, _sfx_lifevol
+        .export _sfx_lifecnt, _sfx_lifeph, _sfx_lifef, _sfx_lifevol
 
 AUDF1   = $D200
 AUDC1   = $D201
@@ -122,9 +122,14 @@ sfx_bt:      .res 2             ; временное под сдвиг на че
 ;
 ; Пересчёт. Период PIT делится на 20, получаются единицы БК 49.2..30.2, а из
 ; них по формуле движка (N = 14.86 * P - 7, см. sfx.h) выходят делители POKEY
-; 724..442. Делитель убавляется на 2 за кадр, фаза - четыре кадра; сколько
-; кадров всего, задаёт sfx_life в src/sfx.c, там же и разбор чисел.
+; 724..436. Взяты ровно числа оригинала - 96 тиков, три через три, - только
+; тик у нас кадр 50 Гц, а не 33, поэтому и нота короче, и вся трель быстрее.
+; Делитель убавляется на 3 за кадр: за 96 кадров это те же 724..436.
+;
+; Фаза считается ОТДЕЛЬНЫМ счётчиком, а не битом общего: период шесть, и
+; маской его не возьмёшь.
 _sfx_lifecnt: .byte 0           ; кадров осталось
+_sfx_lifeph:  .byte 0           ; фаза трели: 6,5,4 звук, 3,2,1 тишина
 _sfx_lifef:   .res 2            ; текущий делитель, ползёт ВНИЗ
 _sfx_lifevol: .byte 0           ; тембр и громкость
 
@@ -243,9 +248,13 @@ env_done:
 
 ; Очередной кадр звука новой жизни: трель с поднимающейся высотой, см. выше.
 life_tick:
-        lda     _sfx_lifecnt
-        and     #4                      ; четыре кадра звук, четыре тишина
-        beq     life_quiet
+        dec     _sfx_lifeph
+        bne     :+
+        lda     #6
+        sta     _sfx_lifeph
+:       lda     _sfx_lifeph
+        cmp     #4                      ; три кадра звук, три тишина
+        bcc     life_quiet
         lda     _sfx_lifef
         sta     AUDF1
         lda     _sfx_lifef+1
@@ -259,9 +268,9 @@ life_quiet:
         lda     #0
         sta     AUDC2
 life_step:
-        sec                             ; высота растёт: делитель на 2 меньше
+        sec                             ; высота растёт: делитель на 3 меньше
         lda     _sfx_lifef
-        sbc     #2
+        sbc     #3
         sta     _sfx_lifef
         lda     _sfx_lifef+1
         sbc     #0
