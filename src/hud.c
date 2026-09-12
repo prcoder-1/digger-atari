@@ -64,6 +64,21 @@ void hud_score(void)
     text_bcd6(SCORE_X, SCORE_Y, score);
 }
 
+/*
+ * Значками показаны ЗАПАСНЫЕ жизни, а не все: та, которой играют сейчас, в
+ * ряду не стоит. Значит на последней жизни значков нет вовсе.
+ *
+ * Правило одинаковое в обоих источниках:
+ *
+ *      оригинал, print_lives (Work/TF.C):
+ *          temp = get_lives(1) - 1;    - "dont show present life"
+ *
+ *      порт на БК, print_lives:
+ *          for (uint16_t l = 1; ...) if (++l > game.lives) { стереть; break; }
+ *
+ * Принимает процедура ПОЛНОЕ число жизней - так зовущей стороне не нужно
+ * помнить про вычитание, и счётчик жизней остаётся единственным.
+ */
 void hud_lives(uint8_t n)
 {
     uint8_t i;
@@ -72,6 +87,7 @@ void hud_lives(uint8_t n)
         return;
     lives_shown = n;
 
+    n = n ? (uint8_t)(n - 1u) : 0u;     /* та, которой играют, не показана */
     if (n > MAX_LIVES)
         n = MAX_LIVES;
 
