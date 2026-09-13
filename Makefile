@@ -68,7 +68,7 @@ EMUFLAGS  := -pal -nobasic
 # выглядели успешными.
 .DEFAULT_GOAL := all
 
-.PHONY: all clean run run130 size atr demo play sound mos mos-demo
+.PHONY: all clean run run-game run130 size atr demo play sound mos mos-demo title
 
 # ---------------------------------------------------------------------------
 # Сборка тем же исходником, но компилятором llvm-mos.
@@ -113,7 +113,47 @@ mos-demo:
 	$(MAKE) MOSEXTRA="-DDIGGER_DEMO" MOSBUILD=build-mos-demo mos
 
 
-all: $(XEX)
+# ---------------------------------------------------------------------------
+# ЗАСТАВКА. Отдельная программа: свой конфиг, своя обвязка, свои ассеты.
+# В файл игры она кладётся ПЕРВОЙ и запускается вектором INITAD - разбор в
+# cfg/title.cfg. Исходники лежат в title/, а не в src/: там их подобрал бы
+# wildcard игры.
+# ---------------------------------------------------------------------------
+TBUILD    := build-title
+TCFG      := cfg/title.cfg
+TCSRC     := $(wildcard title/*.c)
+TASRC     := $(wildcard title/*.s) $(wildcard assets-title/*.s)
+TOBJS     := $(patsubst title/%.c,$(TBUILD)/%.o,$(TCSRC)) \
+             $(patsubst title/%.s,$(TBUILD)/%.o,$(filter title/%,$(TASRC))) \
+             $(patsubst assets-title/%.s,$(TBUILD)/t_%.o,$(filter assets-title/%,$(TASRC)))
+
+$(TBUILD):
+	@mkdir -p $(TBUILD)
+
+$(TBUILD)/%.o: title/%.c $(HDRS) | $(TBUILD)
+	cc65 $(CFLAGS) -o $(@:.o=.s) $<
+	ca65 $(ASFLAGS) -o $@ $(@:.o=.s)
+
+$(TBUILD)/%.o: title/%.s | $(TBUILD)
+	ca65 $(ASFLAGS) -o $@ $<
+
+$(TBUILD)/t_%.o: assets-title/%.s | $(TBUILD)
+	ca65 $(ASFLAGS) -o $@ $<
+
+$(TBUILD)/title.xex: $(TOBJS) $(TCFG)
+	ld65 -C $(TCFG) -m $(TBUILD)/title.map -o $@ $(TOBJS) $(TARGET).lib
+
+title: $(TBUILD)/title.xex
+	@echo "заставка: $(TBUILD)/title.xex"
+
+# Игра с заставкой: куски заставки идут в файле ПЕРЕД кусками игры. Формат
+# XEX это позволяет - признак $FFFF в начале каждого файла необязателен для
+# продолжения, а загрузчик просто читает куски подряд.
+$(BUILD)/digger_title.xex: $(TBUILD)/title.xex $(XEX)
+	cat $(TBUILD)/title.xex $(XEX) > $@
+	@echo "игра с заставкой: $@"
+
+all: $(XEX) $(BUILD)/digger_title.xex
 
 # Сборка с зашитым маршрутом и телеметрией: единственный способ проверить
 # геймплей автоматически, потому что послать ввод в эмулятор из песочницы
@@ -129,8 +169,9 @@ demo:
 # Загрузочный образ дискеты: игра кладётся как AUTORUN.SYS в копию шаблона
 # с уже установленной DOS. Своя файловая система через "atr mkfs" не годится -
 # она без загрузочных секторов и не грузится.
-atr: $(XEX)
-	tools/mkatr.sh $(XEX) $(BUILD)/digger.atr
+# В образ дискеты кладётся игра С ЗАСТАВКОЙ: это и есть то, что играют.
+atr: $(BUILD)/digger_title.xex
+	tools/mkatr.sh $(BUILD)/digger_title.xex $(BUILD)/digger.atr
 
 sound:
 	tools/sound.sh
@@ -155,7 +196,11 @@ $(XEX): $(OBJS) $(CFG)
 	ld65 $(LDFLAGS) -o $@ $(OBJS) $(TARGET).lib
 
 # 65XE = 800XL с 64К - это основная цель
-run: $(XEX)
+run: $(BUILD)/digger_title.xex
+	$(EMU) $(EMUFLAGS) -xl -run $(BUILD)/digger_title.xex
+
+# Игра без заставки - для проверок: заставка каждый раз требует нажатия
+run-game: $(XEX)
 	$(EMU) $(EMUFLAGS) -xl -run $(XEX)
 
 run130: $(XEX)
@@ -175,4 +220,4 @@ size: $(XEX)
 	@sed -n '/Segment list/,/^$$/p' $(MAP) | head -30
 
 clean:
-	rm -rf $(BUILD)
+	rm -rf $(BUILD) $(TBUILD)
