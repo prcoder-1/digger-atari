@@ -52,10 +52,11 @@ void text_digit(uint8_t x_byte, uint8_t y, uint8_t d)
 
 /*
  * Порядок букв в font_alpha - тот же, что в ALPHA у tools/font2c.py. Там их
- * ровно столько, сколько нужно надписи GAME OVER: весь алфавит в MAIN сейчас
- * не влезает.
+ * ровно столько, сколько нужно надписям игры: GAME OVER и PRESS ANY KEY.
+ * Весь алфавит не берётся из-за области, куда грузится шрифт, - разбор там же,
+ * в font2c.py. Правится это ТОЛЬКО парой: строка здесь и ALPHA там.
  */
-static const char alpha_order[] = "AEGMORV";
+static const char alpha_order[] = "AEGKMNOPRSVY";
 
 /*
  * Строка шрифтом ИГРЫ, а не знакогенератором ПЗУ.

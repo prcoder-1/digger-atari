@@ -714,14 +714,44 @@ static dir_t key_to_dir(uint8_t k)
  */
 #define STICK_IDLE  0x0Fu
 
+/*
+ * Надпись та же, что в оригинале, и на том же месте - в верхней панели, поверх
+ * счёта и значков жизней (prints("PRESS ANY KEY", 80, 0, GREEN) после
+ * blank_top). Тринадцать знаков по два байта - 26 байт из сорока, поэтому
+ * начало посередине: (40 - 26) / 2.
+ */
+#define PAUSE_TEXT  "PRESS ANY KEY"
+#define PAUSE_X     7u
+#define HUD_TEXT_Y  2u                  /* строка растра, та же, что у счёта */
+
 static uint8_t paused;
 static uint8_t pause_armed;     /* 0 - ещё держат то, чем ставили паузу */
+
+/*
+ * Панель целиком под надпись и обратно. Возврат идёт через hud_init: та
+ * забывает, сколько значков жизней нарисовано, - иначе hud_lives сочтёт, что
+ * рисовать нечего, и полоса осталась бы стёртой. В оригинале на этом же месте
+ * стоят print_present_score и print_lives.
+ */
+static void pause_banner(uint8_t on)
+{
+    clear_px_at(0, HUD_TEXT_Y, 2u * SCR_STRIDE, FONT_H);   /* вся ширина панели */
+
+    if (on) {
+        text_string(PAUSE_X, HUD_TEXT_Y, PAUSE_TEXT);
+    } else {
+        hud_init();
+        hud_score();
+        hud_lives(game_lives);
+    }
+}
 
 static void pause_enter(void)
 {
     paused = 1;
     pause_armed = 0;
     music_pause = 1;
+    pause_banner(1);
 }
 
 /* Всё ли отпущено: ни клавиши, ни ручки, ни кнопки */
@@ -740,6 +770,7 @@ static void pause_release(uint8_t kc)
         return;
     paused = 0;
     music_pause = 0;
+    pause_banner(0);
 }
 
 #endif /* !DIGGER_DEMO || DEMO_KEYS */

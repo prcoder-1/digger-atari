@@ -3,10 +3,8 @@
 ; Цифра 12 точек в ячейке 16 точек: 2 байта на строку, 12 строк.
 ; Один бит на точку (ANTIC F), старший бит слева.
 
-; Шрифт уехал под ПЗУ вместе с картами уровней: MAIN упирается в потолок.
-; Сегмент тот же, LEVELS - он грузится в кадровый буфер и переносится по $C000
-; процедурой copy_levels (src/util.s). Отдельного куска XEX заводить не стали:
-; copy_levels переносит сегмент целиком, а что в нём лежит - ей всё равно.
+; Шрифт уехал под ПЗУ вместе с картами уровней: MAIN упёрся в потолок.
+; Переносит их copy_levels (src/util.s), сегмент общий.
         .segment "LEVELS"
 
         .export _font_digits
@@ -186,6 +184,19 @@ _font_alpha:
         .byte $3C,$30
         .byte $3F,$F0
         .byte $1F,$E0
+; --- K ---
+        .byte $30,$C0
+        .byte $30,$C0
+        .byte $30,$C0
+        .byte $30,$C0
+        .byte $30,$C0
+        .byte $3F,$C0
+        .byte $3F,$F0
+        .byte $3C,$30
+        .byte $3C,$30
+        .byte $3C,$30
+        .byte $3C,$30
+        .byte $3C,$30
 ; --- M ---
         .byte $1F,$E0
         .byte $3F,$F0
@@ -199,6 +210,19 @@ _font_alpha:
         .byte $3B,$30
         .byte $3B,$30
         .byte $3B,$30
+; --- N ---
+        .byte $0F,$E0
+        .byte $1F,$F0
+        .byte $18,$30
+        .byte $18,$30
+        .byte $18,$30
+        .byte $18,$30
+        .byte $1C,$30
+        .byte $1C,$30
+        .byte $1C,$30
+        .byte $1C,$30
+        .byte $1C,$30
+        .byte $1C,$30
 ; --- O ---
         .byte $1F,$E0
         .byte $3F,$F0
@@ -212,6 +236,19 @@ _font_alpha:
         .byte $30,$30
         .byte $3F,$F0
         .byte $1F,$E0
+; --- P ---
+        .byte $1F,$E0
+        .byte $3F,$F0
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $3F,$F0
+        .byte $3F,$E0
+        .byte $3C,$00
+        .byte $3C,$00
+        .byte $3C,$00
+        .byte $3C,$00
+        .byte $3C,$00
 ; --- R ---
         .byte $1F,$80
         .byte $3F,$C0
@@ -225,6 +262,19 @@ _font_alpha:
         .byte $30,$30
         .byte $30,$30
         .byte $30,$30
+; --- S ---
+        .byte $1F,$E0
+        .byte $3F,$F0
+        .byte $30,$30
+        .byte $30,$00
+        .byte $30,$00
+        .byte $3F,$E0
+        .byte $1F,$F0
+        .byte $00,$F0
+        .byte $00,$F0
+        .byte $30,$F0
+        .byte $3F,$F0
+        .byte $1F,$E0
 ; --- V ---
         .byte $30,$30
         .byte $30,$30
@@ -238,4 +288,17 @@ _font_alpha:
         .byte $18,$C0
         .byte $1F,$C0
         .byte $0F,$80
+; --- Y ---
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $30,$30
+        .byte $3F,$F0
+        .byte $1F,$E0
+        .byte $03,$80
+        .byte $03,$80
+        .byte $03,$80
+        .byte $03,$80
+        .byte $03,$80
 
