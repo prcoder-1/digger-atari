@@ -666,20 +666,80 @@ static dir_t stick_dir(uint8_t s)
 #define KEY_STAR    0x07u       /* '*' вправо */
 #define KEY_MINUS   0x0Eu       /* '-' вверх  */
 #define KEY_EQUAL   0x0Fu       /* '=' вниз   */
+#define KEY_SPACE   0x21u       /* пробел - пауза, как в оригинале */
+#define KEY_NONE    0xFFu
 
-static dir_t key_dir(void)
+/*
+ * Код нажатой клавиши без модификаторов; KEY_NONE - ничего не нажато.
+ *
+ * Ячейка сбрасывается сразу: обработчик кладёт код заново каждый кадр, пока
+ * клавишу держат, и удержание выходит без задержки автоповтора.
+ */
+static uint8_t key_code(void)
 {
     uint8_t k = OS_CH;
-    if (k == 0xFFu)
-        return DIR_STOP;
-    OS_CH = 0xFF;
-    switch (k & 0x3Fu) {
+
+    if (k == KEY_NONE)
+        return KEY_NONE;
+    OS_CH = KEY_NONE;
+    return (uint8_t)(k & 0x3Fu);
+}
+
+static dir_t key_to_dir(uint8_t k)
+{
+    switch (k) {
     case KEY_STAR:  return DIR_RIGHT;
     case KEY_PLUS:  return DIR_LEFT;
     case KEY_MINUS: return DIR_UP;
     case KEY_EQUAL: return DIR_DOWN;
     default:        return DIR_STOP;
     }
+}
+
+/*
+ * Пауза. В оригинале (chk_hold, Work/TZ.C) она устроена так: по пробелу
+ * выключается музыка и звук, вверху пишется "PRESS ANY KEY", и дальше пустой
+ * цикл - сначала пока пробел держат, потом пока не нажмут что угодно.
+ *
+ * Два отличия, оба намеренные. Первое: у нас игра во время паузы не замирает
+ * намертво, а продолжает перебирать кадры - Диггер и враги шевелятся на месте,
+ * хотя ни шага, ни счёта, ни падения мешков нет. Второе: надписи нет, в
+ * игровом шрифте всего семь букв (см. alpha_order в src/text.c), и "PRESS ANY
+ * KEY" ими не набрать.
+ *
+ * Снятие паузы, как и в оригинале, ждёт СНАЧАЛА отпускания: иначе тот же
+ * пробел, которым её включили, снял бы её в следующем же такте. Джойстик
+ * учитывается наравне с клавиатурой - отпущенным считается, когда ручка в
+ * покое (все биты подняты) и кнопка не нажата.
+ */
+#define STICK_IDLE  0x0Fu
+
+static uint8_t paused;
+static uint8_t pause_armed;     /* 0 - ещё держат то, чем ставили паузу */
+
+static void pause_enter(void)
+{
+    paused = 1;
+    pause_armed = 0;
+    music_pause = 1;
+}
+
+/* Всё ли отпущено: ни клавиши, ни ручки, ни кнопки */
+static uint8_t input_idle(uint8_t kc)
+{
+    return (uint8_t)(kc == KEY_NONE && vbi_stick == STICK_IDLE && vbi_trig != 0);
+}
+
+static void pause_release(uint8_t kc)
+{
+    if (!pause_armed) {
+        pause_armed = input_idle(kc);   /* сперва дождаться отпускания */
+        return;
+    }
+    if (input_idle(kc))
+        return;
+    paused = 0;
+    music_pause = 0;
 }
 
 #endif /* !DIGGER_DEMO || DEMO_KEYS */
@@ -698,7 +758,12 @@ int main(void)
     uint8_t hit;
     uint8_t crushed;
     uint8_t rip_shown = 0xFF;
-    dir_t want, kd;
+    dir_t want;
+#if !defined(DIGGER_DEMO) || defined(DEMO_KEYS)
+    /* Клавиша этого такта; по ней же ставится и снимается пауза. В сборке с
+     * зашитым маршрутом клавиатуры нет вовсе, поэтому и переменной нет. */
+    uint8_t kc;
+#endif
 
     /*
      * Обнуление ОЗУ под ПЗУ - ПЕРВЫМ делом. Туда уехала статика половины
@@ -757,15 +822,14 @@ int main(void)
 
 #if defined(DIGGER_DEMO) && defined(DEMO_KEYS)
         /* Ввод настоящий, телеметрия на месте - см. рамку у stick_dir */
+        kc = key_code();
         want = stick_dir(vbi_stick);
-        kd = key_dir();
         if (want == DIR_STOP)
-            want = kd;
+            want = key_to_dir(kc);
         demo_telemetry();
 #elif defined(DIGGER_DEMO)
         /* Вместо ввода - зашитый маршрут; телеметрия рисуется каждый такт */
         want = demo_input();
-        (void)kd;
 
         /*
          * Маршрут кончился - игра замирает целиком. Замирания одного счётчика
@@ -779,10 +843,34 @@ int main(void)
             continue;
         }
 #else
+        kc = key_code();
         want = stick_dir(vbi_stick);
-        kd = key_dir();
         if (want == DIR_STOP)
-            want = kd;
+            want = key_to_dir(kc);
+#endif
+
+#if !defined(DIGGER_DEMO) || defined(DEMO_KEYS)
+        /*
+         * ПАУЗА. Ставится только в игре: в остальных состояниях поле и так
+         * стоит, а пауза посреди сцены гибели или фанфары оборвала бы их
+         * музыку на середине.
+         *
+         * Во время паузы идёт ТОЛЬКО анимация: Диггер перебирает лапами
+         * (man_tick с DIR_STOP - тот же путь, что у стоящего на месте), враги
+         * шевелятся bugs_animate. Шага, счёта, падения мешков и полёта снаряда
+         * нет - вся игровая часть такта пропускается.
+         */
+        if (paused) {
+            man_tick(DIR_STOP);
+            bugs_animate();
+            bugs_draw_all();
+            pause_release(kc);
+            continue;
+        }
+        if (kc == KEY_SPACE && state == ST_PLAY) {
+            pause_enter();
+            continue;
+        }
 #endif
 
 #ifdef DEMO_PROFILE

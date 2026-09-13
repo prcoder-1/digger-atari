@@ -15,6 +15,7 @@
 ;   n + 28   пять восьмых           $FF      конец, мелодия зациклится
 
         .export _music_start, _music_stop, _music_tick
+        .export _music_pause
         .export _music_notes_played
         .export _mus_atk, _mus_hlvl, _mus_hrate, _mus_drate, _mus_hcnt
 
@@ -50,6 +51,11 @@ mus_egt:  .res 2                ; длительность восьмой, фо�
 
         .segment "DATA"
 mus_on:   .byte 0
+; Пауза игры. Мелодия при этом не останавливается, а ЗАМИРАЕТ: место в партитуре
+; сохраняется, и после паузы она играет дальше с той же ноты. Так же устроено и
+; в оригинале - init_pause/rst_pause (Work/TH.C) поднимают флаг m_pause, а он
+; закрывает весь звуковой тик целиком.
+_music_pause: .byte 0
 
 ;
 ; Огибающая ноты. В оригинале мелодия идёт вторым источником звука - широтно-
@@ -173,7 +179,13 @@ _music_stop:
 
 ; Вызывается из кадрового прерывания
 _music_tick:
-        jsr     n2_tick                 ; второй голос фанфары идёт с задержкой
+        lda     _music_pause            ; пауза игры: мелодия замирает
+        beq     :+
+        lda     #0
+        sta     AUDC3
+        sta     AUDC4
+        rts
+:       jsr     n2_tick                 ; второй голос фанфары идёт с задержкой
         lda     mus_on
         bne     :+
 

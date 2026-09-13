@@ -58,6 +58,9 @@ extern uint8_t sfx_started;
  * Меняется из игрового кода, применяется в кадровом прерывании. */
 extern uint8_t sfx_sweep;
 
+/* 1 - мелодия замирает на месте (пауза игры), 0 - играет дальше с той же ноты */
+extern uint8_t music_pause;
+
 /* Выбор и запуск фоновой мелодии: 0 - основная, 1 - бонусная */
 void music_select(uint8_t bonus);
 void music_stop(void);
