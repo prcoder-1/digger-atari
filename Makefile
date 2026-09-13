@@ -123,15 +123,26 @@ TBUILD    := build-title
 TCFG      := cfg/title.cfg
 TCSRC     := $(wildcard title/*.c)
 TASRC     := $(wildcard title/*.s) $(wildcard assets-title/*.s)
+# Блиттер и спрайты берутся у ИГРЫ как есть: демо выводит те же фигуры тем же
+# способом, и вторая редакция блиттера здесь была бы прямой дорогой к
+# расхождению.
+TGAME     := src/blit.s assets/sprites.s
 TOBJS     := $(patsubst title/%.c,$(TBUILD)/%.o,$(TCSRC)) \
              $(patsubst title/%.s,$(TBUILD)/%.o,$(filter title/%,$(TASRC))) \
-             $(patsubst assets-title/%.s,$(TBUILD)/t_%.o,$(filter assets-title/%,$(TASRC)))
+             $(patsubst assets-title/%.s,$(TBUILD)/t_%.o,$(filter assets-title/%,$(TASRC))) \
+             $(TBUILD)/g_blit.o $(TBUILD)/g_sprites.o
+
+$(TBUILD)/g_blit.o: src/blit.s | $(TBUILD)
+	ca65 $(ASFLAGS) -o $@ $<
+
+$(TBUILD)/g_sprites.o: assets/sprites.s | $(TBUILD)
+	ca65 $(ASFLAGS) -o $@ $<
 
 $(TBUILD):
 	@mkdir -p $(TBUILD)
 
-$(TBUILD)/%.o: title/%.c $(HDRS) | $(TBUILD)
-	cc65 $(CFLAGS) -o $(@:.o=.s) $<
+$(TBUILD)/%.o: title/%.c $(wildcard title/*.h) | $(TBUILD)
+	cc65 $(CFLAGS) -I title -o $(@:.o=.s) $<
 	ca65 $(ASFLAGS) -o $@ $(@:.o=.s)
 
 $(TBUILD)/%.o: title/%.s | $(TBUILD)
