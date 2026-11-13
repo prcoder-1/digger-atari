@@ -16,10 +16,11 @@ cd "$(dirname "$0")/.."
 XEX=${1:-build/digger.xex}
 OUT=${2:-build/digger.atr}
 
-TEMPLATE=/home/prcoder/.local/lib/python3.13/site-packages/atrcopy/templates/dos2sd+2.0s.atr
+# Шаблон берётся из Python-пакета atrcopy; другой можно задать в ATR_TEMPLATE
+TEMPLATE=${ATR_TEMPLATE:-$(python3 -c 'import atrcopy, os; print(os.path.dirname(atrcopy.__file__))' 2>/dev/null)/templates/dos2sd+2.0s.atr}
 
 [ -f "$XEX" ] || { echo "нет файла $XEX - сначала make"; exit 1; }
-[ -f "$TEMPLATE" ] || { echo "не найден шаблон DOS: $TEMPLATE"; exit 1; }
+[ -f "$TEMPLATE" ] || { echo "не найден шаблон DOS: $TEMPLATE (pip install atrcopy или ATR_TEMPLATE)"; exit 1; }
 command -v atr >/dev/null || { echo "нет утилиты atr (atari-tools)"; exit 1; }
 
 cp "$TEMPLATE" "$OUT"
