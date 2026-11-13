@@ -90,56 +90,12 @@ def bits_to_cell(bits):
     return [(v >> 8) & 0xFF, v & 0xFF]
 
 
-# Полный набор знаков для ЗАСТАВКИ. В игре его нет и не надо: там MAIN забит,
-# а надписей всего несколько. Заставка живёт в своей памяти, которую потом
-# занимает игра, и место там есть.
-#
-# Порядок знаков задаёт индекс, по которому их ищет title/text.c:
-#   0..9   цифры
-#   10..35 буквы A..Z
-#   36     точка, 37 пробел, 38 подчёркивание
-FULL_ORDER = ([('CHAR__%d' % d) for d in range(10)] +
-              [('CHAR__%s' % chr(ord('A') + i)) for i in range(26)] +
-              ['CHAR__PE', 'CHAR__SP', 'CHAR__UL'])
-
-
-def write_full(dst):
-    lines = [
-        '; font.s - СГЕНЕРИРОВАНО tools/font2c.py --full, не править вручную.',
-        '; ПОЛНЫЙ шрифт оригинала для заставки: CLib/CHAR__*.CHR.',
-        '; Знак 12 точек в ячейке 16 точек: 2 байта на строку, 12 строк.',
-        '; Один бит на точку (ANTIC F), старший бит слева.',
-        ';',
-        '; Порядок: цифры 0..9, буквы A..Z, точка, пробел, подчёркивание.',
-        '; По нему знаки и ищет title/text.c.',
-        '',
-        '        .export _font_full',
-        '        .segment "RODATA"',
-        '',
-        '_font_full:',
-    ]
-    for name in FULL_ORDER:
-        lines.append('; --- %s ---' % name)
-        for bits in parse_chr(os.path.join(CHR_DIR, '%s.CHR' % name)):
-            lines.append('        .byte ' +
-                         ','.join('$%02X' % v for v in bits_to_cell(bits)))
-    lines.append('')
-    open(dst, 'w', encoding='utf-8').write('\n'.join(lines))
-    print('%s: знаков %d, %d байт' % (dst, len(FULL_ORDER), len(FULL_ORDER) * 24))
-    return 0
-
-
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--src', default='/home/prcoder/БК0010-develop/'
                     'digger-bk0010/digger_short_font.c')
     ap.add_argument('--asm', default='assets/font.s')
-    ap.add_argument('--full', metavar='ФАЙЛ',
-                    help='вместо шрифта игры собрать ПОЛНЫЙ шрифт заставки')
     a = ap.parse_args()
-
-    if a.full:
-        return write_full(a.full)
 
     text = open(a.src, errors='replace').read()
 
